@@ -20,6 +20,7 @@ if _cfg_path.exists():
     with open(_cfg_path, encoding="utf-8") as f:
         _srv._config = json.load(f)
     _srv._config_path = _cfg_path
+    application.secret_key = _srv._config.get("dashboard_secret", "sandman-watchdog-dashboard-2026")
 
     try:
         from watchdog.config_store import get_registry_engine, ensure_config_table, load_all_configs
