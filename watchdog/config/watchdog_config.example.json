@@ -1,14 +1,15 @@
 {
   "_comment": "Copy this file to watchdog_config.json and fill in your values. Sensitive fields (API keys, passwords) can also be set via environment variables — env vars take precedence over file values.",
-  "dashboard_url": "http://YOUR_HOST:5055",
+  "dashboard_url": "http://YOUR_HOST:9700",
   "dashboard_secret": "CHANGE_ME_RANDOM_SECRET",
 
   "_env_vars": {
-    "ANTHROPIC_API_KEY":   "anthropic_api_key",
-    "GROQ_API_KEY":        "groq_api_key",
-    "REGISTRY_DB_PASSWORD":"registry_database.password",
-    "DB_PASSWORD":         "database.password",
-    "DASHBOARD_SECRET":    "dashboard_secret"
+    "_comment": "These env vars override the corresponding config fields. Set them in your .env file or server environment instead of hardcoding secrets here.",
+    "ANTHROPIC_API_KEY":    "anthropic_api_key",
+    "GROQ_API_KEY":         "groq_api_key",
+    "REGISTRY_DB_PASSWORD": "registry_database.password",
+    "DB_PASSWORD":          "database.password",
+    "DASHBOARD_SECRET":     "dashboard_secret  ← Flask session signing key, set a strong random value"
   },
 
   "anthropic_api_key": "sk-ant-api03-...",

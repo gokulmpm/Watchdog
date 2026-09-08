@@ -7,9 +7,16 @@ __pycache__
 *.pyd
 *.egg-info
 .env
+.env.*
 .venv
 venv
 env
+agent/
+
+# ── SECRETS — never bake into image ─────────────────────────────────
+watchdog/config/watchdog_config.json
+watchdog/config/watchdog_config_staging.json
+*.secret
 
 # Logs generated at runtime (mounted as volume)
 logs/
@@ -31,9 +38,17 @@ generate_*.py
 *.DS_Store
 Thumbs.db
 
-# Archive and support files
+# Local-only directories
 _archive/
 deploy/
+ML/
+foundry_chat_agent/
+phase2/
+everything-claude-code/
+.agents/
+.claude/
+.playwright-mcp/
+skills-lock.json
 
 # Test / mock scripts
 watchdog/run_*_mock.py

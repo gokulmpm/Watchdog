@@ -17,4 +17,7 @@ RUN mkdir -p /app/logs
 ENV PORT=9700
 EXPOSE 9700
 
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+    CMD python -c "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ.get('PORT','9700') + '/api/health', timeout=5)" || exit 1
+
 ENTRYPOINT ["/app/entrypoint.sh"]

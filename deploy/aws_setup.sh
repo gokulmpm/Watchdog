@@ -29,16 +29,18 @@ echo "=== 5. Environment variables ==="
 cat > /opt/sandman/.env << 'EOF'
 # Database — update with your AWS RDS endpoint
 DB_HOST=your-rds-endpoint.rds.amazonaws.com
-DB_PORT=3306
 DB_USER=admin
-DB_PASS=your-password
+DB_PASSWORD=your-password
 
 # Registry DB
-REGISTRY_DB=sandman_dev
+REGISTRY_DB_HOST=your-rds-endpoint.rds.amazonaws.com
+REGISTRY_DB_NAME=sandman_dev
+REGISTRY_DB_USER=admin
+REGISTRY_DB_PASSWORD=your-password
 
-# Flask
-FLASK_ENV=production
-PORT=5055
+# Dashboard
+DASHBOARD_SECRET=CHANGE_ME_RANDOM_SECRET
+PORT=9700
 EOF
 
 echo "=== 6. Systemd service — Dashboard (Flask/Gunicorn) ==="

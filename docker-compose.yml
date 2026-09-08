@@ -3,10 +3,29 @@ services:
     build: .
     image: sandman-watchdog
     container_name: sandman-watchdog
+    # host networking gives the container direct access to localhost MySQL
+    # (Linux only — on Mac/Windows Docker Desktop use bridge + DB_HOST=host.docker.internal)
     network_mode: host
     environment:
       - PORT=9700
+      # Host, name, user come from the mounted watchdog_config.json — no need to repeat here.
+      # Only sensitive values are overridden via env vars (never hardcode passwords in this file).
+      - REGISTRY_DB_PASSWORD=${REGISTRY_DB_PASSWORD:-}
+      - DB_PASSWORD=${DB_PASSWORD:-}
+      - DASHBOARD_SECRET=${DASHBOARD_SECRET:-}
     volumes:
       - ./logs:/app/logs
-      - ./watchdog/config/watchdog_config.json:/app/watchdog/config/watchdog_config.json
+      # Mount config file — must exist before starting (copy from watchdog_config.example.json)
+      - ./watchdog/config/watchdog_config.json:/app/watchdog/config/watchdog_config.json:ro
+    healthcheck:
+      test: ["CMD", "sh", "-c", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:${PORT:-9700}/api/health', timeout=5)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
     restart: unless-stopped
