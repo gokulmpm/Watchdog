@@ -1,0 +1,78 @@
+# ── Python ──────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+pip-wheel-metadata/
+
+# ── Virtual environments ─────────────────────────────────────────────
+venv/
+.venv/
+env/
+ENV/
+agent/
+
+# ── Local-only directories (not for GitHub) ──────────────────────────
+foundry_chat_agent/
+ML/
+.playwright-mcp/
+.claude/
+.agents/
+everything-claude-code/
+skills-lock.json
+
+# ── Logs & runtime files ─────────────────────────────────────────────
+*.log
+*.log.*
+logs/
+watchdog.log*
+*.pid
+
+# ── Secrets / config with credentials ───────────────────────────────
+# Real configs contain DB passwords and API keys — never commit them.
+# Commit only watchdog_config.example.json (placeholder values).
+watchdog/config/watchdog_config.json
+watchdog/config/watchdog_config_staging.json
+.env
+.env.*
+*.secret
+
+# ── Phase2 (local development only, not for staging) ────────────────
+phase2/
+phase2 (2).zip
+phase2*.zip
+
+# ── IDE & OS ─────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Testing / cache ──────────────────────────────────────────────────
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# ── Jupyter ──────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+
+# ── Archive (local reference only) ──────────────────────────────────
+_archive/
+
+# ── Large media / generated files ───────────────────────────────────
+# Videos (served from static but large; keep originals out of git)
+watchdog/static/videos/*.mp4
+# Generated reports and data exports
+*.xlsx
+# Presentation files
+*.pptx

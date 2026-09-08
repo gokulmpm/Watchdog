@@ -1,0 +1,12 @@
+services:
+  watchdog:
+    build: .
+    image: sandman-watchdog
+    container_name: sandman-watchdog
+    network_mode: host
+    environment:
+      - PORT=9700
+    volumes:
+      - ./logs:/app/logs
+      - ./watchdog/config/watchdog_config.json:/app/watchdog/config/watchdog_config.json
+    restart: unless-stopped

@@ -1,0 +1,3363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>SI Monitoring Configuration — SandMan® AI Watchdog</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%233d6b45'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='Arial' font-weight='900' font-size='18' fill='white'%3ES%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ── Reset ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ── pw-card system (Prescription + Sieve shared) ── */
+.pw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;margin-bottom:20px}
+.pw-card{background:var(--surface2,#f7f8fa);border:1px solid var(--border,#e2e4e8);border-radius:8px;padding:16px 20px}
+.pw-card-title{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#888;margin-bottom:14px;display:flex;align-items:center;gap:6px}
+.pw-card-title svg{flex-shrink:0;opacity:.6}
+.pw-row{display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border,#e2e4e8)}
+.pw-row:last-child{border-bottom:none;padding-bottom:0}
+.pw-label{font-size:13px;color:var(--text,#1a1a1a);display:flex;align-items:center;gap:8px}
+.pw-ctrl{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.pw-ctrl input[type=number]{width:64px;padding:4px 8px;font-size:13px;border:1px solid var(--border,#ddd);border-radius:5px;background:#fff;text-align:right}
+.pw-ctrl .unit{font-size:11px;color:#999;font-weight:600}
+.sev-chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.sev-ok{background:#e8f5ee;color:#1a7a40}
+.sev-warn{background:#fff3e0;color:#c44a08}
+.sev-crit{background:#fde8e8;color:#c01616}
+.sev-dot{width:6px;height:6px;border-radius:50%;display:inline-block}
+.sev-ok .sev-dot{background:#2d7a4f}
+.sev-warn .sev-dot{background:#c44a08}
+.sev-crit .sev-dot{background:#c01616}
+.pw-enable-bar{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--surface2,#f7f8fa);border:1px solid var(--border,#e2e4e8);border-radius:8px;margin-bottom:16px}
+.pw-enable-label{font-size:13px;font-weight:600;color:var(--text,#1a1a1a)}
+.pw-enable-sub{font-size:11px;color:#888;margin-top:1px}
+
+/* ── Design tokens ── */
+:root {
+  --accent:      #287a50;
+  --accent-lt:   rgba(40,122,80,0.10);
+  --accent-bd:   rgba(40,122,80,0.32);
+  --accent-glow: 0 0 0 3px rgba(40,122,80,0.14), 0 4px 20px rgba(40,122,80,0.18);
+  --red:         #c0392b;
+  --text:        #111827;
+  --muted:       #374151;
+  --subtle:      #52637a;
+  --mono:        'JetBrains Mono', monospace;
+  --spring:      cubic-bezier(0.32,0.72,0,1);
+  --spring-fast: cubic-bezier(0.25,0.46,0.45,0.94);
+
+  /* Glass system */
+  --glass-base:  rgba(255,255,255,0.68);
+  --glass-lt:    rgba(255,255,255,0.42);
+  --glass-bd:    rgba(255,255,255,0.80);
+  --glass-inner: inset 0 1px 0 rgba(255,255,255,0.9);
+  --blur:        20px;
+
+  /* Shadow system — tinted ambient, no generic gray */
+  --shadow-xl:   0 24px 64px rgba(40,80,140,0.14), 0 4px 16px rgba(40,80,140,0.08);
+  --shadow-md:   0 8px 32px rgba(40,80,140,0.11), 0 2px 8px rgba(40,80,140,0.06);
+  --shadow-sm:   0 4px 16px rgba(40,80,140,0.08), 0 1px 4px rgba(40,80,140,0.05);
+
+  /* Geometry */
+  --r-xl:  20px;
+  --r-lg:  16px;
+  --r-md:  10px;
+  --r-sm:  8px;
+  --r-xs:  6px;
+  --r-pill: 999px;
+}
+
+/* ── Grain texture overlay ── */
+body::after {
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:9999;
+  opacity:.022;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)'/%3E%3C/svg%3E");
+  background-size:180px 180px;
+}
+
+/* ── Base ── */
+body {
+  font-family: 'Plus Jakarta Sans', 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text);
+  min-height: 100vh;
+  background:
+    radial-gradient(ellipse 70% 60% at 8% 12%,  rgba(80,180,255,0.22) 0%, transparent 58%),
+    radial-gradient(ellipse 55% 65% at 92% 82%,  rgba(130,80,240,0.14) 0%, transparent 58%),
+    radial-gradient(ellipse 52% 48% at 52% 3%,   rgba(60,210,140,0.14) 0%, transparent 58%),
+    radial-gradient(ellipse 45% 52% at 22% 92%,  rgba(255,170,80,0.10) 0%, transparent 58%),
+    linear-gradient(145deg, #d8effe 0%, #e8f0ff 28%, #ede6ff 60%, #d4f2e8 100%);
+  background-attachment: fixed;
+}
+
+
+   FULL-WIDTH STICKY HEADER
+
+.nav-wrap {
+  position: sticky; top: 0; z-index: 200;
+  width: 100%;
+}
+.nav {
+  width: 100%;
+  background: var(--glass-base);
+  backdrop-filter: blur(var(--blur));
+  -webkit-backdrop-filter: blur(var(--blur));
+  border-bottom: 1px solid var(--glass-bd);
+  border-radius: 0;
+  box-shadow: var(--shadow-sm), var(--glass-inner);
+  height: 56px;
+  display: flex; align-items: center;
+  padding: 0 28px; gap: 20px;
+}
+.nav-logo {
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+}
+.nav-logo-mark {
+  width: 30px; height: 30px; border-radius: 8px;
+  background: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 800; color: #fff;
+  box-shadow: 0 2px 8px rgba(40,122,80,0.35);
+  flex-shrink: 0;
+}
+.nav .brand {
+  color: var(--text); font-weight: 700; font-size: 14px;
+  letter-spacing: -.2px; white-space: nowrap;
+}
+.nav-sep { width: 1px; height: 18px; background: rgba(0,0,0,0.08); flex-shrink: 0; }
+.nav-sub {
+  font-size: 12.5px; font-weight: 500; color: var(--subtle);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.nav a { color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 500;
+  transition: color .2s var(--spring-fast); }
+.nav a:hover { color: var(--text); }
+
+/* ── Page wrapper ── */
+.page { max-width: 1100px; margin: 0 auto; padding: 24px 20px 100px; }
+
+/* ── Page heading block ── */
+.page-eyebrow {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: var(--r-pill);
+  background: var(--accent-lt); border: 1px solid var(--accent-bd);
+  font-size: 10.5px; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--accent);
+  margin-bottom: 10px;
+}
+.page-eyebrow::before {
+  content: ''; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--accent); animation: cfg-dot-blink 2s ease-in-out infinite;
+}
+.page-h1 {
+  font-size: 26px; font-weight: 800; color: var(--text);
+  letter-spacing: -.5px; line-height: 1.2;
+  margin-bottom: 22px;
+}
+
+/* ── Config hero video banner — double-bezel ── */
+.cfg-hero-shell {
+  padding: 6px;
+  background: rgba(255,255,255,0.25);
+  border: 1px solid var(--glass-bd);
+  border-radius: calc(var(--r-xl) + 6px);
+  box-shadow: var(--shadow-xl);
+  margin-bottom: 24px;
+}
+.cfg-hero {
+  position: relative; height: 190px;
+  border-radius: var(--r-xl); overflow: hidden;
+  border: none; box-shadow: var(--glass-inner);
+}
+.cfg-hero-video {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  object-fit: cover; object-position: center 15%;
+  filter: brightness(.52) saturate(.85);
+}
+.cfg-hero-overlay {
+  position: absolute; inset: 0;
+  background: linear-gradient(105deg, rgba(8,16,36,.82) 0%, rgba(8,16,36,.48) 48%, transparent 100%);
+  display: flex; align-items: center; padding: 0 36px; gap: 18px;
+}
+.cfg-hero-icon {
+  width: 48px; height: 48px; background: var(--accent);
+  border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; font-weight: 800; color: #fff; flex-shrink: 0;
+  box-shadow: 0 6px 24px rgba(40,122,80,0.5), inset 0 1px 0 rgba(255,255,255,0.2);
+}
+.cfg-hero-text h2 { font-size: 18px; font-weight: 800; color: #fff; letter-spacing: -.3px; }
+.cfg-hero-text p  { font-size: 12px; color: rgba(255,255,255,.6); margin-top: 4px; line-height: 1.45; }
+.cfg-hero-live {
+  margin-left: auto; display: flex; align-items: center; gap: 8px;
+  font-size: 10px; font-weight: 700; letter-spacing: 1.2px; color: #fff;
+  background: rgba(40,122,80,0.55);
+  padding: 7px 16px; border-radius: var(--r-pill);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.18);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.12);
+}
+.cfg-hero-live::before {
+  content:''; width:6px; height:6px; border-radius:50%;
+  background:#6fffb8; animation:cfg-dot-blink 1.4s ease-in-out infinite;
+  box-shadow: 0 0 6px rgba(110,255,184,0.6);
+}
+@keyframes cfg-dot-blink { 0%,100%{opacity:1;} 50%{opacity:.18;} }
+.cfg-hero-scan {
+  position:absolute; left:0; right:0; height:1.5px;
+  background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.5) 40%,rgba(255,255,255,.5) 60%,transparent 100%);
+  animation:cfg-scan 4s linear infinite; pointer-events:none; z-index:2;
+}
+@keyframes cfg-scan { 0%{top:-4px;} 100%{top:194px;} }
+
+
+   SELECTOR + TABS + PANELS — double-bezel shell
+
+.cfg-shell {
+  padding: 5px;
+  background: rgba(255,255,255,0.18);
+  border: 1px solid var(--glass-bd);
+  border-radius: calc(var(--r-lg) + 5px);
+  box-shadow: var(--shadow-xl);
+}
+
+/* ── Selector bar ── */
+.sel-card {
+  background: var(--glass-base);
+  backdrop-filter: blur(var(--blur)); -webkit-backdrop-filter: blur(var(--blur));
+  border: none;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  box-shadow: var(--glass-inner);
+  padding: 18px 24px;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 24px;
+  border-bottom: 1px solid rgba(255,255,255,0.5);
+}
+.sel-item { display: flex; align-items: center; gap: 10px; }
+.sel-item label {
+  font-weight: 600; font-size: 13px; white-space: nowrap;
+  min-width: 100px; color: var(--muted); letter-spacing: -.1px;
+}
+.sel-item select {
+  height: 36px; min-width: 260px; padding: 0 32px 0 14px;
+  border: 1px solid rgba(255,255,255,0.65);
+  border-radius: var(--r-md);
+  font-size: 13px; font-family: inherit; color: var(--text);
+  background: rgba(255,255,255,0.75)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2352637a'/%3E%3C/svg%3E")
+    no-repeat right 12px center;
+  appearance: none; cursor: pointer;
+  box-shadow: var(--glass-inner), var(--shadow-sm);
+  transition: border-color .25s var(--spring), box-shadow .25s var(--spring);
+}
+.sel-item select:focus {
+  outline: none; border-color: var(--accent-bd);
+  box-shadow: var(--accent-glow), var(--glass-inner);
+  background-color: rgba(255,255,255,0.92);
+}
+.sel-item select:disabled { background-color: rgba(255,255,255,0.3); color: #aaa; cursor: default; }
+
+/* ── Line status ── */
+.line-stat { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--muted); margin-left:auto; }
+.ls-badge {
+  padding: 4px 12px; border-radius: var(--r-pill);
+  font-size: 11px; font-weight: 700; letter-spacing: .02em;
+}
+.ls-active  { background:rgba(40,122,80,0.12);  color:#1c6b3a; border:1px solid rgba(40,122,80,0.28); }
+.ls-hasdata { background:rgba(180,140,0,0.10);  color:#7a5a00; border:1px solid rgba(180,140,0,0.28); }
+.ls-nodata  { background:rgba(82,99,122,0.10);  color:var(--subtle); border:1px solid rgba(82,99,122,0.22); }
+.ls-error   { background:rgba(192,57,43,0.10);  color:#9a1f14; border:1px solid rgba(192,57,43,0.28); }
+
+/* ── Tab bar — pill style ── */
+.tab-bar {
+  display: flex; align-items: center;
+  background: rgba(255,255,255,0.42);
+  backdrop-filter: blur(var(--blur));
+  border: none; border-top: 1px solid rgba(255,255,255,0.45);
+  padding: 8px 12px; gap: 4px;
+  overflow-x: auto; scrollbar-width: none;
+}
+.tab-bar::-webkit-scrollbar { display: none; }
+.tab-btn {
+  padding: 7px 16px; border: none;
+  border-radius: var(--r-pill);
+  font-size: 13px; font-family: inherit; font-weight: 500; color: var(--muted);
+  cursor: pointer; background: transparent; white-space: nowrap; flex-shrink: 0;
+  transition: color .2s var(--spring), background .2s var(--spring), box-shadow .2s var(--spring);
+}
+.tab-btn:hover { color: var(--text); background: rgba(255,255,255,0.6); }
+.tab-btn.active {
+  color: var(--accent); font-weight: 700;
+  background: rgba(255,255,255,0.92);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255,255,255,1);
+}
+
+/* ── Tab panel ── */
+.tab-panel {
+  display: none;
+  background: var(--glass-base);
+  backdrop-filter: blur(var(--blur)); -webkit-backdrop-filter: blur(var(--blur));
+  border: none; border-top: 1px solid rgba(255,255,255,0.45);
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
+  padding: 32px 28px 28px;
+  box-shadow: var(--glass-inner);
+}
+.tab-panel.active { display: block; }
+
+/* ── Section with eyebrow badge ── */
+.sec { margin-bottom: 36px; }
+.sec:last-child { margin-bottom: 0; }
+.sec-eyebrow {
+  display: inline-flex; align-items: center;
+  padding: 3px 10px; border-radius: var(--r-pill);
+  background: rgba(40,122,80,0.08); border: 1px solid rgba(40,122,80,0.2);
+  font-size: 10px; font-weight: 700; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--accent);
+  margin-bottom: 8px;
+}
+.sec-title {
+  font-size: 16px; font-weight: 700; color: var(--text);
+  margin-bottom: 5px; letter-spacing: -.25px; line-height: 1.3;
+}
+.sec-hint {
+  font-size: 13px; color: var(--subtle); margin-bottom: 16px;
+  line-height: 1.65; max-width: 70ch;
+}
+
+/* ── Table — inner glass panel ── */
+.t-wrap {
+  padding: 3px;
+  background: rgba(255,255,255,0.25);
+  border: 1px solid var(--glass-bd);
+  border-radius: calc(var(--r-md) + 3px);
+  box-shadow: var(--shadow-sm);
+}
+.t { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; border-radius: var(--r-md); overflow: hidden; }
+.t th {
+  background: rgba(40,122,80,0.07);
+  border-bottom: 1px solid rgba(255,255,255,0.6);
+  padding: 11px 16px; text-align: left; font-weight: 600;
+  font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--accent); white-space: nowrap;
+}
+.t td {
+  border-bottom: 1px solid rgba(255,255,255,0.5);
+  padding: 11px 16px; vertical-align: middle;
+  background: rgba(255,255,255,0.48);
+  transition: background .15s var(--spring-fast);
+}
+.t tr:last-child td { border-bottom: none; }
+.t tr:nth-child(even) td { background: rgba(255,255,255,0.32); }
+.t tr:hover td { background: rgba(40,122,80,0.05); }
+.t .col-setting { width: 210px; font-weight: 500; color: var(--text); }
+.t .col-value   { width: 160px; }
+.t .col-desc    { font-size: 12.5px; color: var(--subtle); line-height: 1.6; }
+.t .col-band    { width: 110px; font-weight: 500; color: var(--text); }
+.t .col-label   { width: 155px; }
+.t .col-minmax  { width: 90px; text-align: center; }
+
+/* ── Inputs ── */
+input[type=number], input[type=text], input[type=date] {
+  height: 34px; padding: 0 12px;
+  border: 1px solid rgba(255,255,255,0.7); border-radius: var(--r-sm);
+  font-size: 13px; font-family: inherit; color: var(--text);
+  background: rgba(255,255,255,0.78);
+  box-shadow: var(--glass-inner), var(--shadow-sm);
+  transition: border-color .25s var(--spring), box-shadow .25s var(--spring), background .2s;
+}
+input[type=number]:focus, input[type=text]:focus, input[type=date]:focus {
+  outline: none; border-color: var(--accent-bd);
+  box-shadow: var(--accent-glow), var(--glass-inner);
+  background: rgba(255,255,255,0.95);
+}
+input[type=number] { width: 92px; }
+input[type=text]   { width: 154px; }
+input[type=date]   { width: 162px; }
+input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+
+select.t-sel {
+  height: 34px; padding: 0 30px 0 12px;
+  border: 1px solid rgba(255,255,255,0.7); border-radius: var(--r-sm);
+  font-size: 13px; font-family: inherit; color: var(--text);
+  background: rgba(255,255,255,0.78)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%2352637a'/%3E%3C/svg%3E")
+    no-repeat right 10px center;
+  appearance: none; min-width: 130px;
+  box-shadow: var(--glass-inner), var(--shadow-sm);
+  transition: border-color .25s var(--spring), box-shadow .25s var(--spring);
+}
+select.t-sel:focus {
+  outline: none; border-color: var(--accent-bd);
+  box-shadow: var(--accent-glow), var(--glass-inner);
+}
+
+.auto-cell  { color: var(--subtle); font-size: 12px; text-align: center; font-family: var(--mono); }
+.unit-txt   { color: var(--muted); font-size: 13px; margin-left: 5px; font-weight: 500; }
+.wt-sum-ok  { font-weight: 700; color: #1a5e36; font-size: 13.5px; }
+.wt-sum-err { font-weight: 700; color: var(--red); font-size: 13.5px; }
+.inline-row { display: flex; align-items: center; gap: 8px; }
+
+/* ── Toggle — premium pill ── */
+.tog { display: flex; align-items: center; gap: 10px; }
+.tog-sw { position: relative; width: 44px; height: 24px; flex-shrink: 0; }
+.tog-sw input { opacity: 0; width: 0; height: 0; }
+.tog-track {
+  position: absolute; inset: 0;
+  background: rgba(82,99,122,0.22);
+  border-radius: var(--r-pill); cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.55);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.08);
+  transition: background .28s var(--spring), border-color .28s var(--spring);
+}
+.tog-track::before {
+  content: ''; position: absolute;
+  width: 18px; height: 18px; left: 2px; top: 2px;
+  background: #fff; border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.14);
+  transition: transform .28s var(--spring);
+}
+.tog-sw input:checked + .tog-track {
+  background: var(--accent); border-color: var(--accent-bd);
+  box-shadow: 0 0 0 2px var(--accent-lt), inset 0 1px 0 rgba(255,255,255,0.2);
+}
+.tog-sw input:checked + .tog-track::before { transform: translateX(20px); }
+.tog-lbl { font-size: 13.5px; color: var(--muted); font-weight: 500; }
+
+/* ── Two-col grid ── */
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+@media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
+
+/* ── Parameter list ── */
+.plist {
+  border: 1px solid var(--glass-bd); border-radius: var(--r-md); overflow: hidden;
+  max-height: 360px; overflow-y: auto;
+  background: rgba(255,255,255,0.38); backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-sm);
+  scrollbar-width: thin; scrollbar-color: rgba(40,122,80,0.25) transparent;
+}
+.plist-head {
+  position: sticky; top: 0; z-index: 2; display: grid;
+  grid-template-columns: 34px 1fr 190px;
+  background: rgba(40,122,80,0.09);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border-bottom: 2px solid rgba(40,122,80,0.15);
+  padding: 10px 16px; font-size: 10.5px; font-weight: 700;
+  color: var(--accent); text-transform: uppercase; letter-spacing: .08em;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.7);
+}
+.plist-head.has-opt { grid-template-columns: 34px 1fr 110px 190px; }
+.plist-head.has-opt.has-cfg { grid-template-columns: 34px 1fr 110px 190px 44px; }
+.plist-head.has-lim { grid-template-columns: 34px 1fr 90px 90px 190px; }
+.plist-head.has-opt.has-lim { grid-template-columns: 34px 1fr 110px 90px 90px 190px; }
+.plist-head.has-opt.has-lim.has-cfg { grid-template-columns: 34px 1fr 110px 90px 90px 190px 44px; }
+.prow {
+  display: grid; grid-template-columns: 34px 1fr 190px;
+  padding: 9px 16px; border-bottom: 1px solid rgba(255,255,255,0.48); align-items: center;
+  transition: background .15s var(--spring-fast);
+}
+.prow.has-opt { grid-template-columns: 34px 1fr 110px 190px; }
+.prow.has-opt.has-cfg { grid-template-columns: 34px 1fr 110px 190px 44px; }
+.prow.has-lim { grid-template-columns: 34px 1fr 90px 90px 190px; }
+.prow.has-opt.has-lim { grid-template-columns: 34px 1fr 110px 90px 90px 190px; }
+.prow.has-opt.has-lim.has-cfg { grid-template-columns: 34px 1fr 110px 90px 90px 190px 44px; }
+.prow-lim input {
+  width: 72px; height: 28px; padding: 0 7px;
+  border: 1px solid rgba(255,255,255,0.65); border-radius: var(--r-sm);
+  font-size: 12px; font-family: inherit; color: var(--text);
+  background: rgba(255,255,255,0.78); box-shadow: var(--glass-inner);
+}
+.prow-lim input:focus { outline:none; border-color:var(--accent-bd); box-shadow:var(--accent-glow),var(--glass-inner); }
+.param-eng-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; margin: 0 auto;
+  background: rgba(255,255,255,0.65); border: 1px solid rgba(255,255,255,0.75);
+  border-radius: var(--r-xs); cursor: pointer;
+  font-size: 14px; color: var(--subtle); line-height: 1;
+  transition: all .2s var(--spring); box-shadow: var(--shadow-sm);
+}
+.param-eng-btn:hover { border-color: var(--accent-bd); color: var(--accent); background: var(--accent-lt); box-shadow: var(--accent-glow); transform: scale(1.08); }
+.param-eng-btn.has-custom { border-color: rgba(224,108,0,0.4); color: #a05000; background: rgba(224,108,0,0.08); }
+
+/* ── Modal — deepest blur layer ── */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(8,16,36,0.3); backdrop-filter: blur(8px);
+  z-index: 1000; display: flex; align-items: center; justify-content: center;
+}
+.modal-box {
+  background: var(--glass-base); backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px);
+  border: 1px solid var(--glass-bd); border-radius: var(--r-xl);
+  box-shadow: var(--shadow-xl), var(--glass-inner);
+  width: min(960px,96vw); max-height: 92vh; display: flex; flex-direction: column;
+}
+.modal-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 18px 24px; border-bottom: 1px solid rgba(255,255,255,0.5); flex-shrink: 0;
+}
+.modal-header .mh-title { font-size: 15px; font-weight: 700; color: var(--text); flex: 1; letter-spacing: -.15px; }
+.modal-header .mh-sub { font-size: 12px; color: var(--subtle); }
+.modal-close {
+  background: rgba(0,0,0,0.04); border: 1px solid rgba(0,0,0,0.06);
+  font-size: 18px; cursor: pointer; color: var(--subtle);
+  line-height: 1; padding: 4px 8px; border-radius: var(--r-sm);
+  transition: background .18s, color .18s;
+}
+.modal-close:hover { background: rgba(192,57,43,0.1); color: var(--red); border-color: rgba(192,57,43,0.2); }
+.modal-body { overflow-y: auto; padding: 24px; flex: 1; }
+.modal-footer {
+  display: flex; align-items: center; gap: 10px;
+  padding: 16px 24px; border-top: 1px solid rgba(255,255,255,0.5); flex-shrink: 0;
+}
+.prow-opt input {
+  width: 92px; height: 30px; padding: 0 10px;
+  border: 1px solid rgba(255,255,255,0.65); border-radius: var(--r-sm);
+  font-size: 12.5px; font-family: inherit; color: var(--text);
+  background: rgba(255,255,255,0.78); box-shadow: var(--glass-inner);
+}
+.prow-opt input:focus { outline: none; border-color: var(--accent-bd); box-shadow: var(--accent-glow), var(--glass-inner); }
+.prow:last-child { border-bottom: none; }
+.prow:nth-child(even) { background: rgba(255,255,255,0.18); }
+.prow:hover { background: rgba(40,122,80,0.05); }
+.prow-name { font-size: 13.5px; cursor: pointer; color: var(--text); font-weight: 500; line-height: 1.4; }
+.prow-col  { font-size: 11px; color: var(--subtle); font-family: var(--mono); letter-spacing: .03em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.en-row    { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-size: 13.5px; color: var(--muted); }
+.na-msg    { color: var(--subtle); font-style: italic; font-size: 13.5px; padding: 8px 0; }
+
+/* ── Loading ── */
+.loading { color: var(--subtle); font-size: 13px; padding: 12px 0; display: flex; align-items: center; gap: 8px; }
+.spin {
+  display: inline-block; width: 15px; height: 15px;
+  border: 2px solid rgba(40,122,80,0.18); border-top-color: var(--accent);
+  border-radius: 50%; animation: sp .7s linear infinite; flex-shrink: 0;
+}
+@keyframes sp { to { transform: rotate(360deg); } }
+
+/* ── Save bar — premium pill CTA ── */
+.save-bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 20px 0 0; border-top: 1px solid rgba(255,255,255,0.55); margin-top: 28px;
+}
+.btn-save {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 26px; background: var(--accent); color: #fff; border: none;
+  border-radius: var(--r-pill);
+  font-size: 13.5px; font-weight: 600; letter-spacing: -.1px; cursor: pointer;
+  font-family: inherit;
+  box-shadow: 0 4px 20px rgba(40,122,80,0.32), 0 1px 4px rgba(40,122,80,0.2),
+              inset 0 1px 0 rgba(255,255,255,0.18);
+  transition: transform .3s var(--spring), box-shadow .3s var(--spring), opacity .2s;
+}
+.btn-save::after { content: '↗'; font-size: 13px; opacity: .75; transition: transform .3s var(--spring); }
+.btn-save:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(40,122,80,0.38), 0 2px 8px rgba(40,122,80,0.2), inset 0 1px 0 rgba(255,255,255,0.2); }
+.btn-save:hover::after { transform: translate(2px,-2px); opacity:1; }
+.btn-save:active { transform: scale(.97); box-shadow: 0 2px 12px rgba(40,122,80,0.25); }
+.btn-save:disabled { background: rgba(82,99,122,0.25); cursor: default; box-shadow: none; }
+.btn-save:disabled::after { display: none; }
+
+.btn-cancel {
+  display: inline-flex; align-items: center;
+  padding: 10px 20px;
+  background: rgba(255,255,255,0.65); color: var(--muted);
+  border: 1px solid var(--glass-bd); border-radius: var(--r-pill);
+  font-size: 13.5px; font-weight: 500; cursor: pointer; font-family: inherit;
+  box-shadow: var(--shadow-sm), var(--glass-inner);
+  transition: background .2s var(--spring), color .2s, transform .2s var(--spring);
+}
+.btn-cancel:hover { background: rgba(255,255,255,0.9); color: var(--text); transform: translateY(-1px); }
+.btn-cancel:active { transform: scale(.98); }
+
+.save-ok  { font-size: 13px; color: #1a6b3a; font-weight: 600; }
+.save-err { font-size: 13px; color: var(--red); font-weight: 600; }
+
+
+   UX IMPROVEMENTS — comprehensive redesign pass
+
+
+/* ── Base font scale ── */
+body { font-size: 15px; }
+
+/* ── Page wrapper — wider, more breathing room ── */
+.page { max-width: 1200px; padding: 28px 28px 140px; }
+
+/* ── Page heading ── */
+.page-h1 { font-size: 24px; margin-bottom: 20px; }
+
+/* ── Selector bar — roomier ── */
+.sel-card {
+  padding: 22px 28px;
+  gap: 32px;
+}
+.sel-item label {
+  font-size: 14px;
+  font-weight: 600;
+  min-width: 110px;
+}
+.sel-item select {
+  height: 42px;
+  min-width: 280px;
+  font-size: 13.5px;
+}
+
+/* ── Tab bar — taller, bolder active state ── */
+.tab-bar {
+  height: 52px;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.45);
+}
+.tab-btn {
+  padding: 10px 20px;
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: -.1px;
+  position: relative;
+  border-radius: var(--r-pill);
+}
+.tab-btn.active {
+  color: var(--accent);
+  font-weight: 700;
+  background: rgba(40,122,80,0.12);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255,255,255,0.9);
+}
+.tab-btn.active::after {
+  content: '';
+  position: absolute;
+  bottom: -7px;
+  left: 14px; right: 14px;
+  height: 3px;
+  background: var(--accent);
+  border-radius: 3px 3px 0 0;
+}
+.tab-btn:hover { box-shadow: 0 2px 12px rgba(40,80,140,0.09); }
+
+/* ── Tab panel — taller padding, scrollable with green scrollbar ── */
+.tab-panel {
+  padding: 36px 32px 32px;
+  max-height: calc(100vh - 260px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(40,122,80,0.28) transparent;
+}
+.tab-panel::-webkit-scrollbar { width: 5px; }
+.tab-panel::-webkit-scrollbar-track { background: transparent; }
+.tab-panel::-webkit-scrollbar-thumb {
+  background: rgba(40,122,80,0.30);
+  border-radius: 99px;
+}
+.tab-panel::-webkit-scrollbar-thumb:hover { background: rgba(40,122,80,0.50); }
+
+/* ── Section cards — elevated, separated ── */
+.sec {
+  padding: 24px;
+  margin-bottom: 20px;
+  background: rgba(255,255,255,0.30);
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.55);
+  box-shadow: 0 4px 20px rgba(40,80,140,0.06);
+}
+.sec:last-child { margin-bottom: 0; }
+
+.sec-eyebrow {
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .09em;
+  margin-bottom: 10px;
+  border-radius: 999px;
+}
+.sec-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -.3px;
+  line-height: 1.25;
+  margin-bottom: 10px;
+  padding-bottom: 13px;
+  border-bottom: 1px solid rgba(255,255,255,0.55);
+}
+.sec-hint {
+  font-size: 13.5px;
+  color: #374151;
+  margin-bottom: 18px;
+  line-height: 1.7;
+  max-width: 72ch;
+}
+
+/* ── Inputs — taller, clearer ── */
+input[type=number], input[type=text], input[type=date],
+input[type=email], input[type=password] {
+  height: 38px;
+  font-size: 14px;
+  padding: 0 13px;
+  border-radius: var(--r-sm);
+  border: 1px solid rgba(255,255,255,0.72);
+  background: rgba(255,255,255,0.80);
+  box-shadow: var(--glass-inner), var(--shadow-sm);
+  font-family: inherit;
+  color: var(--text);
+  transition: border-color .22s var(--spring), box-shadow .22s var(--spring), background .18s;
+}
+input[type=number]:focus, input[type=text]:focus, input[type=date]:focus,
+input[type=email]:focus, input[type=password]:focus {
+  outline: none;
+  border-color: var(--accent-bd);
+  box-shadow: var(--accent-glow), var(--glass-inner);
+  background: rgba(255,255,255,0.97);
+}
+input[type=number] { width: 96px; }
+input[type=text]   { width: 160px; }
+input[type=date]   { width: 168px; }
+
+textarea {
+  padding: 10px 13px;
+  line-height: 1.6;
+  resize: vertical;
+  min-height: 84px;
+  font-size: 14px;
+  border-radius: var(--r-sm);
+  border: 1px solid rgba(255,255,255,0.72);
+  background: rgba(255,255,255,0.80);
+  box-shadow: var(--glass-inner), var(--shadow-sm);
+  font-family: inherit;
+  color: var(--text);
+  transition: border-color .22s var(--spring), box-shadow .22s var(--spring), background .18s;
+}
+textarea:focus {
+  outline: none;
+  border-color: var(--accent-bd);
+  box-shadow: var(--accent-glow), var(--glass-inner);
+  background: rgba(255,255,255,0.97);
+}
+
+/* ── Selects ── */
+select, select.t-sel {
+  height: 40px;
+  font-size: 14px;
+  border: 1px solid rgba(255,255,255,0.72) !important;
+  background-color: rgba(255,255,255,0.80) !important;
+  box-shadow: var(--glass-inner), var(--shadow-sm) !important;
+  border-radius: var(--r-sm) !important;
+  transition: border-color .22s var(--spring), box-shadow .22s var(--spring), background .18s !important;
+}
+select:focus, select.t-sel:focus {
+  outline: none !important;
+  border-color: var(--accent-bd) !important;
+  box-shadow: var(--accent-glow), var(--glass-inner) !important;
+  background-color: rgba(255,255,255,0.97) !important;
+}
+
+/* ── Toggle switch — larger ── */
+.tog-sw { width: 48px; height: 26px; }
+.tog-track::before {
+  width: 20px; height: 20px;
+  left: 2px; top: 2px;
+}
+.tog-sw input:checked + .tog-track::before { transform: translateX(22px); }
+.tog-lbl { font-size: 14px; }
+
+/* ── Table — more padding, slightly larger text ── */
+.t { font-size: 13.5px; }
+.t th {
+  padding: 13px 18px;
+  font-size: 11.5px;
+  letter-spacing: .065em;
+}
+.t td {
+  padding: 13px 18px;
+  background: rgba(255,255,255,0.52) !important;
+}
+.t tr:nth-child(even) td { background: rgba(255,255,255,0.30) !important; }
+.t tr:hover td { background: rgba(40,122,80,0.06) !important; }
+
+/* ── Parameter list rows — breathing room ── */
+.prow {
+  padding: 11px 18px;
+}
+.plist-head {
+  padding: 11px 18px;
+  font-size: 11px;
+}
+.prow-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+.prow-col {
+  font-size: 12px;
+  color: #4a5568;
+  font-family: var(--mono);
+}
+.prow-lim input {
+  width: 76px; height: 30px;
+  padding: 0 8px; font-size: 13px;
+}
+.prow-opt input {
+  width: 96px; height: 32px;
+  padding: 0 10px; font-size: 13px;
+}
+
+/* ── Enable row ── */
+.en-row {
+  display: flex; align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--muted);
+  padding: 12px 16px;
+  background: rgba(255,255,255,0.48);
+  border-radius: var(--r-sm);
+  border: 1px solid rgba(255,255,255,0.62);
+  margin-bottom: 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── Loading ── */
+.loading { font-size: 14px; padding: 20px 0; }
+
+/* ── Custom checkbox — glass with green check ── */
+input[type=checkbox] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px; height: 18px;
+  border: 1.5px solid rgba(82,99,122,0.38);
+  border-radius: 5px;
+  background: rgba(255,255,255,0.72);
+  box-shadow: var(--glass-inner), var(--shadow-sm);
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  transition: background .2s var(--spring), border-color .2s var(--spring), box-shadow .2s;
+}
+input[type=checkbox]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-lt), inset 0 1px 0 rgba(255,255,255,0.22);
+}
+input[type=checkbox]:checked::after {
+  content: '';
+  position: absolute;
+  left: 5px; top: 2px;
+  width: 5px; height: 9px;
+  border: 2px solid #fff;
+  border-top: none; border-left: none;
+  transform: rotate(42deg);
+}
+input[type=checkbox]:focus { outline: none; box-shadow: var(--accent-glow); }
+
+/* ── Range slider — green thumb with glow ── */
+input[type=range] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 5px;
+  background: rgba(40,122,80,0.18);
+  border-radius: 99px;
+  outline: none;
+  cursor: pointer;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2.5px solid var(--accent);
+  box-shadow: 0 2px 10px rgba(40,122,80,0.32), 0 0 0 0 var(--accent-lt), inset 0 1px 0 rgba(255,255,255,0.9);
+  transition: transform .18s var(--spring), box-shadow .18s;
+}
+input[type=range]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 0 5px var(--accent-lt), 0 3px 12px rgba(40,122,80,0.36);
+}
+input[type=range]::-moz-range-thumb {
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2.5px solid var(--accent);
+  box-shadow: 0 2px 10px rgba(40,122,80,0.32);
+  cursor: pointer;
+}
+
+/* ── Save bar — NOT sticky inside scroll container (avoids overlap) ── */
+/* Sits naturally at the bottom of each panel, always fully visible on scroll */
+.save-bar {
+  position: static;
+  margin-top: 32px;
+  padding: 20px 0 4px;
+  border-top: 1px solid rgba(255,255,255,0.6);
+  display: flex; align-items: center; gap: 12px;
+  background: transparent;
+}
+
+/* Extra bottom padding so last content never hides behind the bar */
+.tab-panel { padding-bottom: 12px; }
+
+/* ── Buttons — bigger, more prominent ── */
+.btn-save {
+  padding: 12px 36px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -.1px;
+  min-width: 140px;
+  justify-content: center;
+}
+.btn-cancel {
+  padding: 12px 24px;
+  font-size: 15px;
+  font-weight: 500;
+  min-width: 110px;
+  justify-content: center;
+}
+
+/* ── Filter input inside plist ── */
+.plist-search {
+  display: block; width: 100%;
+  padding: 9px 16px;
+  border: none; border-bottom: 1px solid rgba(255,255,255,0.5);
+  background: rgba(255,255,255,0.62);
+  backdrop-filter: blur(12px);
+  font-size: 13.5px; font-family: inherit; color: var(--text);
+  border-radius: 0; box-shadow: none;
+}
+.plist-search:focus { outline: none; background: rgba(255,255,255,0.88); }
+
+/* ── cfg-shell — crisp overflow clip ── */
+.cfg-shell { border-radius: calc(var(--r-lg) + 5px); overflow: hidden; }
+
+/* ── Hero compact ── */
+.cfg-hero { height: 160px; }
+@keyframes cfg-scan { 0%{top:-4px;} 100%{top:164px;} }
+.cfg-hero-shell { margin-bottom: 22px; }
+
+/* ── Misc ── */
+.nav { gap: 14px; }
+.inline-row { gap: 7px; }
+.unit-txt { font-size: 13px; }
+
+/* ── Mobile — collapse selectors to column at 720px ── */
+@media (max-width: 720px) {
+  .sel-card { flex-direction: column; align-items: flex-start; gap: 16px; }
+  .sel-item { flex-direction: column; align-items: flex-start; gap: 5px; }
+  .sel-item select { min-width: 100%; }
+}
+@media (max-width: 680px) {
+  .tab-panel { max-height: none; padding: 24px 18px 24px; }
+  .save-bar { position: static; margin-left: 0; margin-right: 0; padding: 14px 0 0; }
+  .t .col-desc { display: none; }
+  .cfg-hero { height: 120px; }
+  .sec { padding: 18px; }
+}
+</style>
+</head>
+<body>
+
+<!-- Floating pill nav -->
+<div class="nav-wrap">
+  <nav class="nav">
+    <div class="nav-logo">
+      <div class="nav-logo-mark">S</div>
+      <span class="brand">SandMan® AI Watchdog</span>
+    </div>
+    <div class="nav-sep"></div>
+    <span class="nav-sub">SI Monitoring Configuration</span>
+  </nav>
+</div>
+
+<div class="page">
+  <div class="page-eyebrow">Configuration Panel</div>
+  <h1 class="page-h1">SI Monitoring Configuration</h1>
+
+  <!-- Hero video banner — double-bezel -->
+  <div class="cfg-hero-shell">
+    <div class="cfg-hero">
+      <video class="cfg-hero-video" autoplay loop muted playsinline src="/static/videos/monitoring.mp4"></video>
+      <div class="cfg-hero-scan"></div>
+      <div class="cfg-hero-overlay">
+        <div class="cfg-hero-icon">S</div>
+        <div class="cfg-hero-text">
+          <h2>SandMan® AI Watchdog</h2>
+          <p>Configure monitoring parameters, engine thresholds, alert triggers, and prescription rules per foundry line</p>
+        </div>
+        <div class="cfg-hero-live">LIVE CONFIG</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Selector + tabs + panels — double-bezel shell -->
+  <div class="cfg-shell">
+  <!-- Selectors -->
+  <div class="sel-card">
+    <div class="sel-item">
+      <label for="selC">Customer</label>
+      <select id="selC" onchange="onCustomer()">
+        <option value="">— Loading… —</option>
+      </select>
+    </div>
+    <div class="sel-item">
+      <label for="selL">Foundry Line</label>
+      <select id="selL" disabled onchange="onLine()">
+        <option value="">— Select customer first —</option>
+      </select>
+    </div>
+    <div class="line-stat" id="lineStat" style="display:none;"></div>
+  </div>
+
+  <!-- Config area -->
+  <div id="cfgArea" style="display:none;">
+
+    <!-- Tab bar -->
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="tab('params',this)">Parameters</button>
+      <button class="tab-btn" onclick="tab('monitoring',this)">Baseline &amp; Trigger</button>
+      <button class="tab-btn" onclick="tab('extra-monitors',this)">Monitors</button>
+      <button class="tab-btn" onclick="tab('notifications',this)">Notifications</button>
+    </div>
+
+
+    <div id="tab-params" class="tab-panel active">
+
+      <div class="sec">
+        <div class="sec-title">Prepared Sand</div>
+        <div id="psL"><div class="loading"><span class="spin"></span>Loading…</div></div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-title">Additives</div>
+        <div id="addL"><div class="loading"><span class="spin"></span>Loading…</div></div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-title">SMC / Extra</div>
+        <div id="smcL"><div class="loading"><span class="spin"></span>Loading…</div></div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-title">Sieve</div>
+        <div id="svL"><div class="loading"><span class="spin"></span>Loading…</div></div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-title">Metal / Pouring</div>
+        <div id="metalL"><div class="loading"><span class="spin"></span>Loading…</div></div>
+      </div>
+
+      <div class="save-bar">
+        <button class="btn-save" id="sb1" onclick="save()">Save Changes</button>
+        <button class="btn-cancel" onclick="reload()">Cancel</button>
+        <span id="sm1"></span>
+      </div>
+    </div>
+
+
+
+    <div id="tab-monitoring" class="tab-panel">
+
+      <!-- Hidden fields required by save() — kept for compat -->
+      <input type="hidden" id="mAgg" value="window"/>
+      <input type="hidden" id="mDual" value="false"/>
+      <input type="hidden" id="mSec" value="window"/>
+      <input type="hidden" id="mWin" value="10"/>
+
+      <!-- Monitoring Active toggle -->
+      <div id="monitoringEnabledBanner" style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-radius:10px;margin-bottom:18px;border:2px solid #ff3b30;background:#fff5f5;">
+        <div style="display:flex;align-items:center;gap:12px">
+          <span id="monEnabledIcon" style="font-size:22px">🔕</span>
+          <div>
+            <div id="monEnabledTitle" style="font-size:13px;font-weight:700;color:#b00020">Monitoring Disabled</div>
+            <div id="monEnabledDesc" style="font-size:11px;color:#555;margin-top:2px">This foundry line is excluded from the watchdog. No alerts will be sent. Toggle on to re-enable.</div>
+          </div>
+        </div>
+        <label style="position:relative;display:inline-block;width:52px;height:28px;flex-shrink:0">
+          <input type="checkbox" id="monitoringEnabled" style="opacity:0;width:0;height:0"
+            onchange="
+              const on=this.checked;
+              const b=document.getElementById('monitoringEnabledBanner');
+              const t=document.getElementById('monEnabledTitle');
+              const d=document.getElementById('monEnabledDesc');
+              const ic=document.getElementById('monEnabledIcon');
+              b.style.borderColor=on?'#34c759':'#ff3b30';
+              b.style.background=on?'#f0fff4':'#fff5f5';
+              t.textContent=on?'Monitoring Active':'Monitoring Disabled';
+              t.style.color=on?'#1a7a30':'#b00020';
+              d.textContent=on?'This foundry line is included in the watchdog. Toggle off to stop all monitoring for this line.':'This foundry line is excluded from the watchdog. No alerts will be sent. Toggle on to re-enable.';
+              ic.textContent=on?'✅':'🔕';
+            "/>
+          <span style="position:absolute;cursor:pointer;inset:0;background:#ccc;border-radius:28px;transition:.3s" id="monTogSlider"></span>
+          <span style="position:absolute;content:'';height:20px;width:20px;left:4px;bottom:4px;background:#fff;border-radius:50%;transition:.3s;transform:translateX(0)" id="monTogKnob"></span>
+        </label>
+      </div>
+      <style>
+        #monitoringEnabled:checked + #monTogSlider { background:#34c759; }
+        #monitoringEnabled:checked ~ #monTogKnob { transform:translateX(24px); }
+        #monitoringEnabled + #monTogSlider { background:#ccc; }
+      </style>
+      <script>
+        (function(){
+          const cb=document.getElementById('monitoringEnabled');
+          const slider=document.getElementById('monTogSlider');
+          const knob=document.getElementById('monTogKnob');
+          function syncToggle(){
+            slider.style.background=cb.checked?'#34c759':'#ccc';
+            knob.style.transform=cb.checked?'translateX(24px)':'translateX(0)';
+          }
+          cb.addEventListener('change',syncToggle);
+          syncToggle();
+        })();
+      </script>
+
+      <div class="pw-grid">
+
+        <!-- Window Mode info banner -->
+        <div class="pw-card" style="grid-column:1/-1;background:#eef4ff;border-color:#b8d0f5">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:20px">🪟</span>
+            <div>
+              <div style="font-size:13px;font-weight:700;color:#1f497d">Window Mode — Active</div>
+              <div style="font-size:12px;color:#555;margin-top:2px">
+                Fires on every new preparedsand row. Classifies each parameter into sigma zones
+                (1σ / 2σ / 3σ) against the baseline period. Shift and Component modes are
+                disabled pending SI engine update.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pw-card">
+          <div class="pw-card-title">Aggregation Mode</div>
+          <div class="pw-row">
+            <div class="pw-label">Mode</div>
+            <div class="pw-ctrl">
+              <select id="aggMode" class="t-sel" style="width:130px;font-size:12px"
+                onchange="document.getElementById('dualModeRow').style.display=this.value==='component'?'flex':'none';document.getElementById('reportWindowRow').style.display=this.value!=='window'?'flex':'none'">
+                <option value="window">Window</option>
+                <option value="shift">Shift</option>
+                <option value="component">Component</option>
+                <option value="day">Day</option>
+              </select>
+            </div>
+          </div>
+          <div class="pw-row" id="reportWindowRow" style="display:none">
+            <div class="pw-label">Report window</div>
+            <div class="pw-ctrl">
+              <input type="number" id="reportWindow" min="1" max="50" step="1" value="5" style="width:64px"/>
+              <span class="unit">batches</span>
+            </div>
+          </div>
+          <div class="pw-row" id="dualModeRow" style="display:none">
+            <div class="pw-label">Dual mode</div>
+            <div class="pw-ctrl">
+              <div class="tog">
+                <label class="tog-sw">
+                  <input type="checkbox" id="dualMode"
+                    onchange="document.getElementById('dualSecRow').style.display=this.checked?'flex':'none';document.getElementById('dualModeLbl').textContent=this.checked?'On':'Off'"/>
+                  <span class="tog-track"></span>
+                </label>
+                <span class="tog-lbl" id="dualModeLbl">Off</span>
+              </div>
+            </div>
+          </div>
+          <div class="pw-row" id="dualSecRow" style="display:none">
+            <div class="pw-label">Secondary mode</div>
+            <div class="pw-ctrl">
+              <select id="dualModeSec" class="t-sel" style="width:100px;font-size:12px">
+                <option value="shift">Shift</option>
+                <option value="day">Day</option>
+                <option value="window">Window</option>
+              </select>
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--muted,#888);margin-top:6px">
+            Window mode fires on every new row. Shift/Component/Day accumulate over the configured window.
+          </div>
+        </div>
+
+        <div class="pw-card">
+          <div class="pw-card-title">Window Trigger</div>
+          <div class="pw-row"><div class="pw-label">Fire every</div>
+            <div class="pw-ctrl"><input type="number" id="trWinN" min="1" max="20" value="1" style="width:64px"/><span class="unit">new rows</span></div></div>
+        </div>
+
+        <div class="pw-card">
+          <div class="pw-card-title">Baseline Period</div>
+          <div class="pw-row"><div class="pw-label">Start</div>
+            <div class="pw-ctrl"><input type="date" id="blSt" value="2025-07-01" style="font-size:12px;padding:4px 6px;border:1px solid var(--border,#ddd);border-radius:5px"/></div></div>
+          <div class="pw-row"><div class="pw-label">End</div>
+            <div class="pw-ctrl"><input type="date" id="blEn" value="2025-07-31" style="font-size:12px;padding:4px 6px;border:1px solid var(--border,#ddd);border-radius:5px"/></div></div>
+        </div>
+
+        <div class="pw-card">
+          <div class="pw-card-title">% Change</div>
+          <div class="pw-row"><div class="pw-label">Warning threshold</div>
+            <div class="pw-ctrl"><input type="number" id="pctW" min="0" max="100" step="0.5" value="5.0" style="width:72px"/><span class="unit">%</span></div></div>
+        </div>
+
+      </div>
+
+
+      <!-- ── Alert Trigger ── -->
+      <div class="sec" style="margin-top:20px;">
+        <div class="sec-title">Alert Trigger</div>
+<div class="pw-grid">
+
+        <div class="pw-card">
+          <div class="pw-card-title">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" fill="none"/><path d="M8 5v3l2 2"/></svg>
+            Timing
+          </div>
+          <div class="pw-row"><div class="pw-label">Cooldown</div>
+            <div class="pw-ctrl"><input type="number" id="trCool" min="0" value="300" style="width:72px"/><span class="unit">sec</span></div></div>
+          <div class="pw-row"><div class="pw-label">Check interval</div>
+            <div class="pw-ctrl"><input type="number" id="trIntv" min="10" value="300" style="width:72px"/><span class="unit">sec</span></div></div>
+          <div class="pw-row"><div class="pw-label">Day end time</div>
+            <div class="pw-ctrl">
+              <input type="number" id="trHour" min="0" max="23" value="6" style="width:52px"/>
+              <span class="unit">h</span>
+              <input type="number" id="trMin" min="0" max="59" value="0" style="width:52px"/>
+              <span class="unit">m</span>
+            </div></div>
+        </div>
+
+        <div class="pw-card">
+          <div class="pw-card-title">Window Trigger</div>
+          <div class="pw-row"><div class="pw-label">New rows threshold</div>
+            <div class="pw-ctrl"><input type="number" id="trWinN" min="1" value="10" style="width:72px"/><span class="unit">rows</span></div></div>
+          <div class="pw-row"><div class="pw-label">Skip additive data</div>
+            <div class="pw-ctrl"><div class="tog"><label class="tog-sw"><input type="checkbox" id="trSkip" checked/><span class="tog-track"></span></label></div></div></div>
+        </div>
+
+      </div>
+      </div>
+
+      <div class="save-bar">
+        <button class="btn-save" id="sb3" onclick="save()">Save Changes</button>
+        <button class="btn-cancel" onclick="reload()">Cancel</button>
+        <span id="sm3"></span>
+      </div>
+    </div>
+
+
+    <div id="tab-extra-monitors" class="tab-panel">
+
+      <!-- ── Prescription Monitoring (moved from own tab) ── -->
+<input type="hidden" id="pwCriticalThr" value="6.0"/>
+
+    <!-- Enable toggle bar -->
+    <div class="pw-enable-bar">
+      <div>
+        <div class="pw-enable-label">Prescription Deviation Monitoring</div>
+        <div class="pw-enable-sub">Actual vs AI prescription &nbsp;·&nbsp; Actual vs setpoint &nbsp;·&nbsp; Trend tracking</div>
+      </div>
+      <div class="tog">
+        <label class="tog-sw">
+          <input type="checkbox" id="pwEnable" checked/>
+          <span class="tog-track"></span>
+        </label>
+        <span class="tog-lbl" id="pwEnableLbl">On</span>
+      </div>
+    </div>
+
+    <div class="pw-grid">
+
+      <!-- Card 1: Deviation Thresholds -->
+      <div class="pw-card">
+        <div class="pw-card-title">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 3a1 1 0 0 1 1 1v3a1 1 0 0 1-2 0V5a1 1 0 0 1 1-1zm0 7a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/></svg>
+          Deviation Thresholds
+        </div>
+        <div class="pw-row">
+          <div class="pw-label">
+            <span class="sev-chip sev-ok"><span class="sev-dot"></span>OK</span>
+            up to
+          </div>
+          <div class="pw-ctrl">
+            <input type="number" id="pwTol" min="0.1" max="50" step="0.5" value="1.0"/>
+            <span class="unit">%</span>
+          </div>
+        </div>
+        <div class="pw-row">
+          <div class="pw-label">
+            <span class="sev-chip sev-warn"><span class="sev-dot"></span>Warning</span>
+            up to
+          </div>
+          <div class="pw-ctrl">
+            <input type="number" id="pwWatchThr" min="0.1" max="50" step="0.1" value="1.0"/>
+            <span class="unit">%</span>
+          </div>
+        </div>
+        <div class="pw-row">
+          <div class="pw-label">
+            <span class="sev-chip sev-crit"><span class="sev-dot"></span>Critical</span>
+            above
+          </div>
+          <div class="pw-ctrl">
+            <input type="number" id="pwAlertThr" min="0.1" max="50" step="0.1" value="3.0"/>
+            <span class="unit">%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 2: Additional Monitoring -->
+      <div class="pw-card">
+        <div class="pw-card-title">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h12v12H2V2zm2 2v8h8V4H4zm1 1h6v2H5V5zm0 3h6v2H5V8z"/></svg>
+          Additional Monitoring
+        </div>
+        <div class="pw-row">
+          <div class="pw-label">Actual vs setpoint</div>
+          <div class="pw-ctrl">
+            <div class="tog"><label class="tog-sw"><input type="checkbox" id="pwSetpointEnable" checked onchange="document.getElementById('pwSetpointEnableLbl').textContent=this.checked?'On':'Off'"/><span class="tog-track"></span></label><span class="tog-lbl" id="pwSetpointEnableLbl">On</span></div>
+          </div>
+        </div>
+        <div class="pw-row" style="margin-top:6px;">
+          <div class="pw-label">Setpoint tolerance <span style="font-size:10px;color:var(--muted)">(±)</span></div>
+          <div class="pw-ctrl">
+            <input type="number" id="pwSetpointTol" min="0.1" max="20" step="0.1" value="0.5" style="width:64px"/>
+            <span class="unit">units</span>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--muted,#888);margin-top:2px;margin-left:2px;">
+          Alert fires when machine setpoint differs from prescription by more than this value.
+        </div>
+        <div class="pw-row">
+          <div class="pw-label">Skip zero / null batches</div>
+          <div class="pw-ctrl">
+            <div class="tog"><label class="tog-sw"><input type="checkbox" id="pwSkipZero" checked/><span class="tog-track"></span></label><span class="tog-lbl" id="pwSkipZeroLbl">On</span></div>
+          </div>
+        </div>
+        <div class="pw-row">
+          <div class="pw-label">Poll interval</div>
+          <div class="pw-ctrl">
+            <input type="number" id="pwPoll" min="10" max="600" value="30"/>
+            <span class="unit">sec</span>
+          </div>
+        </div>
+        <div class="pw-row">
+          <div class="pw-label">Idle timeout</div>
+          <div class="pw-ctrl">
+            <input type="number" id="pwIdle" min="0" max="1440" value="60"/>
+            <span class="unit">min</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 3: Trend Tracking -->
+      <div class="pw-card">
+        <div class="pw-card-title">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M1 12L5 7l3 3 3-4 4 5H1z"/></svg>
+          Trend Tracking
+        </div>
+        <div class="pw-row">
+          <div class="pw-label">Window</div>
+          <div class="pw-ctrl">
+            <input type="number" id="pwTrendWindow" min="2" max="20" value="5"/>
+            <span class="unit">batches</span>
+          </div>
+        </div>
+        <div class="pw-row">
+          <div class="pw-label">Trigger at</div>
+          <div class="pw-ctrl">
+            <input type="number" id="pwTrendMin" min="2" max="10" value="3"/>
+            <span class="unit">batches</span>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /pw-grid -->
+
+      <div class="sec">
+        <div class="sec-title">Parameters to Monitor</div>
+        <div class="sec-hint">Only parameters with actual data in this foundry's database are shown. Parameters with no data are automatically excluded.</div>
+        <div id="pwParamList" style="max-width:560px;">
+          <div class="loading"><span class="spin"></span>Loading…</div>
+        </div>
+      </div>
+
+
+      <!-- ── Component Change ── -->
+      <div class="sec">
+        <div class="sec-title">Component Change Monitor</div>
+        <div class="pw-enable-bar" style="margin-bottom:16px">
+          <div>
+            <div class="pw-enable-label">Component Change Monitoring</div>
+            <div class="pw-enable-sub">Fires an alert whenever the running component changes</div>
+          </div>
+          <div class="tog"><label class="tog-sw"><input type="checkbox" id="ccwEnable"/><span class="tog-track"></span></label><span class="tog-lbl" id="ccwEnableLbl">Off</span></div>
+        </div>
+        <div class="pw-grid">
+          <div class="pw-card">
+            <div class="pw-card-title">Data Source</div>
+            <div class="pw-row">
+              <div class="pw-label">Use SCADA table</div>
+              <div class="pw-ctrl"><div class="tog"><label class="tog-sw"><input type="checkbox" id="ccwUseScada" onchange="document.getElementById('ccwUseScadaLbl').textContent=this.checked?'SCADA table':'Additive table'"/><span class="tog-track"></span></label><span class="tog-lbl" id="ccwUseScadaLbl">Additive table</span></div></div>
+            </div>
+          </div>
+          <div class="pw-card">
+            <div class="pw-card-title">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" fill="none"/><path d="M8 5v3l2 2"/></svg>
+              Polling
+            </div>
+            <div class="pw-row">
+              <div class="pw-label">Poll interval</div>
+              <div class="pw-ctrl"><input type="number" id="ccwPoll" min="10" max="600" value="30" style="width:64px"/><span class="unit">sec</span></div>
+            </div>
+            <div class="pw-row">
+              <div class="pw-label">Idle timeout</div>
+              <div class="pw-ctrl"><input type="number" id="ccwIdle" min="0" max="1440" value="0" style="width:64px"/><span class="unit">min</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Bad Batch ── -->
+      <div class="sec">
+        <div class="sec-title">Bad Batch Monitor</div>
+        <div class="pw-enable-bar" style="margin-bottom:16px">
+          <div>
+            <div class="pw-enable-label">SMC Discharge vs COSP</div>
+            <div class="pw-enable-sub" id="bbwModeSub">Alert when |SMC − COSP| exceeds threshold</div>
+          </div>
+          <div class="tog"><label class="tog-sw"><input type="checkbox" id="bbwEnable"/><span class="tog-track"></span></label><span class="tog-lbl" id="bbwEnableLbl">Off</span></div>
+        </div>
+        <!-- Mode toggle pills -->
+        <div style="display:flex;gap:8px;margin-bottom:16px">
+          <button type="button" id="bbwModeAbs" onclick="bbwToggleMode('absolute')"
+            style="flex:1;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;
+                   border:2px solid #1f497d;background:#1f497d;color:#fff;transition:.15s">
+            ± Difference
+          </button>
+          <button type="button" id="bbwModePct" onclick="bbwToggleMode('percentage')"
+            style="flex:1;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;
+                   border:2px solid #ddd;background:#fff;color:#888;transition:.15s">
+            % Band
+          </button>
+          <input type="hidden" id="bbwDetectionMode" value="absolute"/>
+        </div>
+        <div id="bbwModeNote" style="font-size:11px;color:#888;margin-bottom:12px;font-style:italic">
+          Alert when |SMC − COSP| exceeds threshold
+        </div>
+
+        <div class="pw-grid">
+
+          <!-- Thresholds card — changes based on mode -->
+          <div class="pw-card">
+            <div class="pw-card-title">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 3a1 1 0 0 1 1 1v3a1 1 0 0 1-2 0V5a1 1 0 0 1 1-1zm0 7a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/></svg>
+              Severity Thresholds
+            </div>
+            <!-- Absolute mode -->
+            <div id="bbwAbsThrs">
+              <div class="pw-row"><div class="pw-label"><span class="sev-chip sev-ok"><span class="sev-dot"></span>OK</span> up to</div>
+                <div class="pw-ctrl"><input type="number" id="bbwWatchThr" min="0.1" max="50" step="0.1" value="1.0" style="width:64px"/><span class="unit">units</span></div></div>
+              <div class="pw-row"><div class="pw-label"><span class="sev-chip sev-warn"><span class="sev-dot"></span>Warning</span> up to</div>
+                <div class="pw-ctrl"><input type="number" id="bbwAlertThr" min="0.1" max="50" step="0.1" value="2.0" style="width:64px"/><span class="unit">units</span></div></div>
+              <div class="pw-row"><div class="pw-label"><span class="sev-chip sev-crit"><span class="sev-dot"></span>Critical</span> above</div>
+                <div class="pw-ctrl"><input type="number" id="bbwCriticalThr" min="0.1" max="50" step="0.1" value="3.0" style="width:64px"/><span class="unit">units</span></div></div>
+              <input type="hidden" id="bbwThreshold" value="2.0"/>
+            </div>
+            <!-- % Band mode — user enters %, stored as decimal -->
+            <div id="bbwPctThrs" style="display:none">
+              <div class="pw-row">
+                <div class="pw-label"><span class="sev-chip sev-ok"><span class="sev-dot"></span>OK</span></div>
+                <div class="pw-ctrl"><input type="number" id="bbwPctOkThr" min="0.1" max="100" step="0.5" value="2" style="width:72px"/><span class="unit">%</span></div>
+              </div>
+              <div class="pw-row">
+                <div class="pw-label"><span class="sev-chip sev-warn"><span class="sev-dot"></span>Warning</span></div>
+                <div class="pw-ctrl"><input type="number" id="bbwPctWarnThr" min="0.1" max="100" step="0.5" value="5" style="width:72px"/><span class="unit">%</span></div>
+              </div>
+              <div class="pw-row">
+                <div class="pw-label"><span class="sev-chip sev-crit"><span class="sev-dot"></span>Critical</span></div>
+                <div class="pw-ctrl"><input type="number" id="bbwPctCritThr" min="0.1" max="100" step="0.5" value="10" style="width:72px"/><span class="unit">%</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Columns & Polling card -->
+          <div class="pw-card">
+            <div class="pw-card-title">Columns &amp; Polling</div>
+            <div class="pw-row"><div class="pw-label">SMC column</div>
+              <div class="pw-ctrl"><select class="t-sel" id="bbwSmcCol" style="width:180px;font-size:12px"><option value="">— select —</option></select></div></div>
+            <div class="pw-row"><div class="pw-label">COSP column</div>
+              <div class="pw-ctrl"><select class="t-sel" id="bbwCospCol" style="width:180px;font-size:12px"><option value="">— select —</option></select></div></div>
+            <div class="pw-row"><div class="pw-label">Poll interval</div>
+              <div class="pw-ctrl"><input type="number" id="bbwPoll" min="10" max="600" value="30" style="width:64px"/><span class="unit">sec</span></div></div>
+            <div class="pw-row"><div class="pw-label">Idle timeout</div>
+              <div class="pw-ctrl"><input type="number" id="bbwIdle" min="0" max="1440" value="0" style="width:64px"/><span class="unit">min</span></div></div>
+            <div style="font-size:10px;color:#aaa;margin-top:10px;padding-top:8px;border-top:1px solid #eee">
+              Production Report always uses absolute difference
+            </div>
+          </div>
+
+        </div>
+      </div>
+      <script>
+      function bbwToggleMode(mode) {
+        document.getElementById('bbwDetectionMode').value = mode;
+        document.getElementById('bbwAbsThrs').style.display  = mode === 'absolute'   ? '' : 'none';
+        document.getElementById('bbwPctThrs').style.display  = mode === 'percentage' ? '' : 'none';
+        document.getElementById('bbwModeNote').textContent =
+          mode === 'percentage'
+            ? 'Alert when SMC is outside COSP × (1 ± factor)'
+            : 'Alert when |SMC − COSP| exceeds threshold (absolute difference)';
+        // Style the toggle pills
+        const absBtn = document.getElementById('bbwModeAbs');
+        const pctBtn = document.getElementById('bbwModePct');
+        if (absBtn && pctBtn) {
+          absBtn.style.background  = mode === 'absolute'   ? '#1f497d' : '#fff';
+          absBtn.style.color       = mode === 'absolute'   ? '#fff'    : '#888';
+          absBtn.style.borderColor = mode === 'absolute'   ? '#1f497d' : '#ddd';
+          pctBtn.style.background  = mode === 'percentage' ? '#1f497d' : '#fff';
+          pctBtn.style.color       = mode === 'percentage' ? '#fff'    : '#888';
+          pctBtn.style.borderColor = mode === 'percentage' ? '#1f497d' : '#ddd';
+        }
+      }
+      </script>
+
+      <!-- ── SMC Batch Monitor ── -->
+      <div class="sec" style="margin-top:20px;">
+        <div class="sec-title">SMC Batch Monitor (Mixer)</div>
+        <div class="sec-sub" style="margin-bottom:16px">
+          Monitors each <strong>prepared_sand_extra</strong> batch value against LCL/UCL limits as data
+          lands in the database. Also tracks the running shift average. Alerts are sent under
+          category <strong>Mixer</strong> via email and webhook.
+        </div>
+
+        <div class="pw-enable-bar" style="margin-bottom:16px">
+          <div>
+            <div class="pw-enable-label">SMC Batch Monitoring</div>
+            <div class="pw-enable-sub">Alert when individual batch or shift average breaches LCL / UCL</div>
+          </div>
+          <div class="tog">
+            <label class="tog-sw">
+              <input type="checkbox" id="smcEnable"
+                onchange="document.getElementById('smcEnableLbl').textContent=this.checked?'On':'Off'"/>
+              <span class="tog-track"></span>
+            </label>
+            <span class="tog-lbl" id="smcEnableLbl">Off</span>
+          </div>
+        </div>
+
+        <div class="pw-grid" style="max-width:800px">
+
+          <!-- Sigma Alerts card -->
+          <div class="pw-card">
+            <div class="pw-card-title">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 3a1 1 0 0 1 1 1v3a1 1 0 0 1-2 0V5a1 1 0 0 1 1-1zm0 7a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/></svg>
+              Sigma Alerts
+            </div>
+            <div class="pw-row">
+              <div class="pw-label">Enable sigma alerts</div>
+              <div class="pw-ctrl">
+                <div class="tog">
+                  <label class="tog-sw">
+                    <input type="checkbox" id="smcSigmaEnable"
+                      onchange="document.getElementById('smcSigmaEnableLbl').textContent=this.checked?'On':'Off'"/>
+                    <span class="tog-track"></span>
+                  </label>
+                  <span class="tog-lbl" id="smcSigmaEnableLbl">Off</span>
+                </div>
+              </div>
+            </div>
+            <div class="pw-row">
+              <div class="pw-label">Sigma threshold</div>
+              <div class="pw-ctrl">
+                <input type="number" id="smcSigmaThr" min="1.0" max="6.0" step="0.5" value="3.0" style="width:64px"/>
+                <span class="unit">&sigma;</span>
+              </div>
+            </div>
+            <div class="pw-row">
+              <div class="pw-label">Baseline window</div>
+              <div class="pw-ctrl">
+                <input type="number" id="smcSigmaDays" min="7" max="90" step="1" value="30" style="width:64px"/>
+                <span class="unit">days</span>
+              </div>
+            </div>
+            <div style="font-size:11px;color:var(--muted,#888);margin-top:6px">
+              Sigma alerts are additive — LCL/UCL alerts always fire regardless of this toggle.
+            </div>
+          </div>
+
+          <!-- Polling &amp; Cooldown card -->
+          <div class="pw-card">
+            <div class="pw-card-title">Polling &amp; Cooldown</div>
+            <div class="pw-row">
+              <div class="pw-label">Poll interval</div>
+              <div class="pw-ctrl">
+                <input type="number" id="smcPoll" min="10" max="300" step="5" value="30" style="width:64px"/>
+                <span class="unit">sec</span>
+              </div>
+            </div>
+            <div class="pw-row">
+              <div class="pw-label">Alert cooldown</div>
+              <div class="pw-ctrl">
+                <input type="number" id="smcCooldown" min="0" max="3600" step="60" value="300" style="width:64px"/>
+                <span class="unit">sec</span>
+              </div>
+            </div>
+            <div style="font-size:11px;color:var(--muted,#888);margin-top:6px">
+              Cooldown suppresses repeat alerts for the same parameter within the window.
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ── Sieve % Change Monitor ── -->
+      <div class="sec">
+        <div class="sec-title">Sieve % Change Monitor</div>
+
+        <!-- Enable bar -->
+        <div class="pw-enable-bar" style="margin-bottom:16px">
+          <div>
+            <div class="pw-enable-label">Sieve Band % Change Monitoring</div>
+            <div class="pw-enable-sub">PS · NS · CS · RS — all sand types monitored together</div>
+          </div>
+          <div class="tog">
+            <label class="tog-sw">
+              <input type="checkbox" id="swEnable"/>
+              <span class="tog-track"></span>
+            </label>
+            <span class="tog-lbl" id="swEnableLbl">Off</span>
+          </div>
+        </div>
+
+        <!-- Email alerts bar -->
+        <div class="pw-enable-bar" style="margin-bottom:16px">
+          <div>
+            <div class="pw-enable-label">Sieve Change Email Alerts</div>
+            <div class="pw-enable-sub">Send email when a sieve band change is detected</div>
+          </div>
+          <div class="tog">
+            <label class="tog-sw">
+              <input type="checkbox" id="swEmailEnable"/>
+              <span class="tog-track"></span>
+            </label>
+            <span class="tog-lbl" id="swEmailEnableLbl">Off</span>
+          </div>
+        </div>
+
+        <div class="pw-grid">
+
+          <!-- Severity Thresholds card -->
+          <div class="pw-card">
+            <div class="pw-card-title">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 3a1 1 0 0 1 1 1v3a1 1 0 0 1-2 0V5a1 1 0 0 1 1-1zm0 7a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/></svg>
+              Severity Thresholds
+            </div>
+            <div class="pw-row">
+              <div class="pw-label"><span class="sev-chip sev-ok"><span class="sev-dot"></span>OK</span> up to</div>
+              <div class="pw-ctrl">
+                <input type="number" id="swOkThr" min="0.1" max="50" step="0.5" value="1.0" style="width:64px"/>
+                <span class="unit">%</span>
+              </div>
+            </div>
+            <div class="pw-row">
+              <div class="pw-label"><span class="sev-chip sev-warn"><span class="sev-dot"></span>Warning</span> up to</div>
+              <div class="pw-ctrl">
+                <input type="number" id="swWarnThr" min="0.1" max="50" step="0.5" value="3.0" style="width:64px"/>
+                <span class="unit">%</span>
+              </div>
+            </div>
+            <div class="pw-row">
+              <div class="pw-label"><span class="sev-chip sev-crit"><span class="sev-dot"></span>Critical</span> above</div>
+              <div class="pw-ctrl">
+                <input type="number" id="swThreshold" min="0.1" max="100" step="0.5" value="5.0" style="width:64px"/>
+                <span class="unit">%</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Polling card -->
+          <div class="pw-card">
+            <div class="pw-card-title">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="2" fill="none"/><path d="M8 5v3l2 2"/></svg>
+              Polling
+            </div>
+            <div class="pw-row">
+              <div class="pw-label">Poll interval</div>
+              <div class="pw-ctrl">
+                <input type="number" id="swPoll" min="10" max="600" value="60" style="width:64px"/>
+                <span class="unit">sec</span>
+              </div>
+            </div>
+            <div class="pw-row">
+              <div class="pw-label">Idle timeout</div>
+              <div class="pw-ctrl">
+                <input type="number" id="swIdle" min="0" max="1440" value="0" style="width:64px"/>
+                <span class="unit">min</span>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /pw-grid -->
+
+        <!-- Per-band overrides -->
+        <div style="margin-top:4px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#888;margin-bottom:10px">Per-Band Threshold Overrides <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>
+          <div id="swBandThrWrap" style="display:flex;flex-direction:column;gap:6px;max-width:480px"></div>
+          <button type="button" onclick="swAddBandThr()" style="margin-top:8px;font-size:12.5px;padding:5px 14px;border:1px solid var(--accent-bd);border-radius:8px;background:var(--accent-lt);color:var(--accent);cursor:pointer;font-family:inherit;font-weight:600">+ Add band override</button>
+        </div>
+      </div>
+
+      <!-- ── Additive Timing Delay ── -->
+      <div class="sec">
+        <div class="sec-title">Additive Timing Delay</div>
+        <div class="sec-hint">
+          Some foundries have a fixed time gap between the mixer (additive) and the moulding machine.
+          When set, component IDs are reassigned by matching additive timestamps to
+          <code>consumption_booking</code> windows shifted back by this delay.
+          Set to <b>0</b> to use the component ID stored directly in the additive table (default).
+        </div>
+        <div class="pw-grid" style="max-width:480px;">
+          <div class="pw-card">
+            <div class="pw-card-title">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><polyline points="8,5 8,8 10,10"/></svg>
+              Mixer → Moulding Gap
+            </div>
+            <div class="pw-row">
+              <div class="pw-label">Additive delay</div>
+              <div class="pw-ctrl">
+                <input type="number" id="addDelaySec" min="0" max="3600" step="1" value="0" style="width:80px"/>
+                <span class="unit">sec</span>
+              </div>
+            </div>
+            <div class="pw-row">
+              <div class="pw-label" style="color:var(--muted);font-size:11px;">e.g. GPI = 462 sec</div>
+              <div class="pw-ctrl" style="font-size:11px;color:var(--muted);" id="addDelayMin">0 min 0 sec</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Prediction Monitor ── -->
+      <div class="sec">
+        <div class="sec-title">AI Prescription Prediction Monitor</div>
+        <div class="sec-hint">
+          Monitors whether an AI prescription prediction has been generated for each
+          active component group at the start of every shift. Fires an alert if the
+          prediction is missing more than the configured grace period after shift start.
+          Only groups with <strong>hide_for_non_admin = 0</strong> are monitored.
+        </div>
+
+        <div class="pw-enable-bar" style="margin-bottom:16px">
+          <div>
+            <div class="pw-enable-label">Prediction Monitoring</div>
+            <div class="pw-enable-sub">Alert when analytics_report has no prediction for a group + shift</div>
+          </div>
+          <div class="tog">
+            <label class="tog-sw">
+              <input type="checkbox" id="pmEnable"
+                onchange="document.getElementById('pmEnableLbl').textContent=this.checked?'On':'Off'"/>
+              <span class="tog-track"></span>
+            </label>
+            <span class="tog-lbl" id="pmEnableLbl">Off</span>
+          </div>
+        </div>
+
+        <div class="pw-grid" style="max-width:600px">
+          <div class="pw-card">
+            <div class="pw-card-title">Alert Timing</div>
+            <div class="pw-row">
+              <div class="pw-label">Grace period</div>
+              <div class="pw-ctrl">
+                <input type="number" id="pmGrace" min="5" max="120" step="5" value="30" style="width:64px"/>
+                <span class="unit">min after shift start</span>
+              </div>
+            </div>
+            <div style="font-size:11px;color:var(--muted,#888);margin-top:4px">
+              Alert fires if prediction is not in analytics_report within this many minutes of shift start.
+            </div>
+          </div>
+          <div class="pw-card">
+            <div class="pw-card-title">Polling</div>
+            <div class="pw-row">
+              <div class="pw-label">Poll interval</div>
+              <div class="pw-ctrl">
+                <input type="number" id="pmPoll" min="60" max="600" step="60" value="300" style="width:64px"/>
+                <span class="unit">sec</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Cost Saving ── -->
+      <div class="sec" style="margin-top:20px;">
+        <div class="sec-title">Cost Saving</div>
+        <div class="sec-sub" style="margin-bottom:16px">
+          Calculate rejection cost savings vs a pre-SandMan baseline period.
+          Savings = (Baseline Rejection % &minus; Current Rejection %) &times; Production MT &times; Cost per MT.
+        </div>
+        <div class="pw-enable-bar" style="margin-bottom:16px">
+          <div>
+            <div class="pw-enable-label">Enable Cost Saving</div>
+            <div class="pw-enable-sub">Show cost saving overlay on the rejection chart</div>
+          </div>
+          <div class="tog">
+            <label class="tog-sw">
+              <input type="checkbox" id="csEnable"
+                onchange="document.getElementById('csEnableLbl').textContent=this.checked?'On':'Off'">
+              <span class="tog-track"></span>
+            </label>
+            <span class="tog-lbl" id="csEnableLbl">Off</span>
+          </div>
+        </div>
+        <div class="pw-grid" style="max-width:680px">
+          <div class="pw-card">
+            <div class="pw-card-title">Baseline Period (Pre-SandMan)</div>
+            <div class="pw-row">
+              <div class="pw-label">Baseline Start</div>
+              <div class="pw-ctrl">
+                <input type="date" id="csBaselineStart" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit">
+              </div>
+            </div>
+            <div class="pw-row">
+              <div class="pw-label">Baseline End</div>
+              <div class="pw-ctrl">
+                <input type="date" id="csBaselineEnd" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit">
+              </div>
+            </div>
+          </div>
+          <div class="pw-card">
+            <div class="pw-card-title">Cost Configuration</div>
+            <div class="pw-row">
+              <div class="pw-label">Cost per 1 MT Rejection</div>
+              <div class="pw-ctrl" style="display:flex;align-items:center;gap:6px">
+                <span id="csCurrencySymbol" style="font-size:14px;font-weight:700;color:var(--ink)">&#8377;</span>
+                <input type="number" id="csCostPerMt" min="0" step="100" value="7000"
+                  style="width:120px;padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit">
+              </div>
+            </div>
+            <div class="pw-row">
+              <div class="pw-label">Currency</div>
+              <div class="pw-ctrl">
+                <select id="csCurrency" onchange="document.getElementById('csCurrencySymbol').innerHTML=this.value==='INR'?'&#8377;':this.value==='USD'?'$':this.value==='EUR'?'&euro;':'&#8377;'"
+                  style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit">
+                  <option value="INR">INR (&#8377;)</option>
+                  <option value="USD">USD ($)</option>
+                  <option value="EUR">EUR (&euro;)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Data Flow Source Monitoring ── -->
+      <div class="sec" style="margin-top:20px;">
+        <div class="sec-title">Data Flow Source Monitoring</div>
+        <div class="sec-sub" style="margin-bottom:16px">
+          Toggle which data sources are monitored for this foundry line.
+          Disabled sources will not trigger data flow alerts.
+        </div>
+        <div class="pw-grid" style="max-width:680px">
+          <div class="pw-card">
+            <div class="pw-card-title">Sources</div>
+            <div id="dfSourceToggles" style="display:flex;flex-direction:column;gap:10px;padding:4px 0">
+              <!-- Populated by populateDfSources() -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="save-bar">
+        <button class="btn-save" id="sb6" onclick="save()">Save Changes</button>
+        <button class="btn-cancel" onclick="reload()">Cancel</button>
+        <span id="sm6"></span>
+      </div>
+    </div>
+
+
+    <div id="tab-notifications" class="tab-panel">
+
+
+      <!-- ── Webhook / Push Notifications ── -->
+      <div class="sec" style="margin-top:20px;">
+        <div class="sec-title">Push Notification (Webhook)</div>
+        <div class="pw-enable-bar" style="margin-bottom:16px">
+          <div>
+            <div class="pw-enable-label">Webhook Alerts</div>
+            <div class="pw-enable-sub">Send push notifications to the external API for prepared sand deviations</div>
+          </div>
+          <div class="tog">
+            <label class="tog-sw">
+              <input type="checkbox" id="webhookEnable"
+                onchange="document.getElementById('webhookEnableLbl').textContent=this.checked?'On':'Off'"/>
+              <span class="tog-track"></span>
+            </label>
+            <span class="tog-lbl" id="webhookEnableLbl">Off</span>
+          </div>
+        </div>
+
+        <div class="pw-card" style="margin-bottom:12px;">
+          <div class="pw-card-title">API Connection</div>
+          <div class="pw-row">
+            <div class="pw-label">Base URL</div>
+            <div class="pw-ctrl"><input type="url" id="webhookBaseUrl" placeholder="https://..." style="width:320px;font-size:12px;padding:4px 8px;border:1px solid var(--border,#ddd);border-radius:5px"/></div>
+          </div>
+          <div class="pw-row">
+            <div class="pw-label">Foundry Key</div>
+            <div class="pw-ctrl"><input type="text" id="webhookFoundryKey" placeholder="your-foundry-key" style="width:200px;font-size:12px;padding:4px 8px;border:1px solid var(--border,#ddd);border-radius:5px"/></div>
+          </div>
+        </div>
+
+        <div class="pw-card" style="margin-bottom:12px;">
+          <div class="pw-card-title">Shift Names</div>
+          <div style="font-size:12px;color:var(--muted,#888);margin-bottom:10px;">
+            Map shift numbers to display names for this foundry. Leave a name blank to omit that shift.
+          </div>
+          <div class="pw-row">
+            <div class="pw-label">Shift 1</div>
+            <div class="pw-ctrl"><input type="text" id="shiftName1" placeholder="e.g. Morning" style="width:160px;font-size:12px;padding:4px 8px;border:1px solid var(--border,#ddd);border-radius:5px"/></div>
+          </div>
+          <div class="pw-row" style="margin-top:6px;">
+            <div class="pw-label">Shift 2</div>
+            <div class="pw-ctrl"><input type="text" id="shiftName2" placeholder="e.g. Afternoon  (leave blank if only 1 shift)" style="width:280px;font-size:12px;padding:4px 8px;border:1px solid var(--border,#ddd);border-radius:5px"/></div>
+          </div>
+          <div class="pw-row" style="margin-top:6px;">
+            <div class="pw-label">Shift 3</div>
+            <div class="pw-ctrl"><input type="text" id="shiftName3" placeholder="e.g. Night  (leave blank if only 2 shifts)" style="width:280px;font-size:12px;padding:4px 8px;border:1px solid var(--border,#ddd);border-radius:5px"/></div>
+          </div>
+        </div>
+
+        <div class="pw-card">
+          <div class="pw-card-title">Alert Type Filters</div>
+          <div style="font-size:12px;color:var(--muted,#888);margin-bottom:10px;">
+            Choose which alert types trigger push notifications.
+          </div>
+          <div class="pw-row">
+            <input type="checkbox" id="webhookSendSI" style="margin-right:8px;"/>
+            <label for="webhookSendSI" style="font-size:13px;font-weight:600;">Prepared Sand — LCL-UCL / % Deviation</label>
+          </div>
+          <div class="pw-row" style="margin-top:6px;">
+            <input type="checkbox" id="webhookSendBadBatch" style="margin-right:8px;"/>
+            <label for="webhookSendBadBatch" style="font-size:13px;color:var(--muted,#888);">Bad Batch (SMC vs COSP)</label>
+          </div>
+          <div class="pw-row" style="margin-top:6px;">
+            <input type="checkbox" id="webhookSendSmcBatch" style="margin-right:8px;"/>
+            <label for="webhookSendSmcBatch" style="font-size:13px;color:var(--muted,#888);">Mixer — SMC Batch LCL/UCL</label>
+          </div>
+          <div class="pw-row" style="margin-top:6px;">
+            <input type="checkbox" id="webhookSendPrescription" style="margin-right:8px;"/>
+            <label for="webhookSendPrescription" style="font-size:13px;color:var(--muted,#888);">Prescription Deviations</label>
+          </div>
+          <div class="pw-row" style="margin-top:6px;">
+            <input type="checkbox" id="webhookSendSieve" style="margin-right:8px;"/>
+            <label for="webhookSendSieve" style="font-size:13px;color:var(--muted,#888);">Sieve Change</label>
+          </div>
+          <div class="pw-row" style="margin-top:6px;">
+            <input type="checkbox" id="webhookSendPrediction" style="margin-right:8px;"/>
+            <label for="webhookSendPrediction" style="font-size:13px;color:var(--muted,#888);">Missing Prediction</label>
+          </div>
+          <div class="pw-row" style="margin-top:12px;border-top:1px solid var(--border,#eee);padding-top:10px;">
+            <div class="pw-label">Minimum severity to send</div>
+            <div class="pw-ctrl">
+              <select id="webhookMinSeverity" style="font-size:12px;padding:4px 8px;border:1px solid var(--border,#ddd);border-radius:5px;">
+                <option value="warning">Warning and above</option>
+                <option value="critical">Critical only</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Email Notifications ── -->
+      <div class="sec">
+        <div class="sec-title">Email Notifications</div>
+
+        <!-- Enable bar -->
+        <div class="pw-enable-bar" style="margin-bottom:16px">
+          <div>
+            <div class="pw-enable-label">Email Alerts</div>
+            <div class="pw-enable-sub">Send HTML emails for Bad Batch, Prescription, and SI alerts</div>
+          </div>
+          <div class="tog">
+            <label class="tog-sw">
+              <input type="checkbox" id="emailEnable" onchange="document.getElementById('emailEnableLbl').textContent=this.checked?'On':'Off'"/>
+              <span class="tog-track"></span>
+            </label>
+            <span class="tog-lbl" id="emailEnableLbl">Off</span>
+          </div>
+        </div>
+
+        <div class="pw-grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))">
+
+          <!-- SMTP card -->
+          <div class="pw-card">
+            <div class="pw-card-title">SMTP Server</div>
+            <div class="pw-row">
+              <div class="pw-label">Host</div>
+              <div class="pw-ctrl"><input type="text" id="emailSmtpHost" value="smtp.gmail.com" style="width:160px;font-size:12px;padding:4px 8px;border:1px solid var(--border,#ddd);border-radius:5px"/></div>
+            </div>
+            <div class="pw-row">
+              <div class="pw-label">Port</div>
+              <div class="pw-ctrl"><input type="number" id="emailSmtpPort" value="587" min="1" max="65535" style="width:70px"/></div>
+            </div>
+            <div class="pw-row">
+              <div class="pw-label">Encryption</div>
+              <div class="pw-ctrl">
+                <select class="t-sel" id="emailEncryption" style="font-size:12px;padding:4px 6px">
+                  <option value="tls">STARTTLS (587)</option>
+                  <option value="ssl">SSL (465)</option>
+                  <option value="none">None (25)</option>
+                </select>
+              </div>
+            </div>
+            <div class="pw-row">
+              <div class="pw-label">Username</div>
+              <div class="pw-ctrl"><input type="text" id="emailUsername" placeholder="your@email.com" style="width:160px;font-size:12px;padding:4px 8px;border:1px solid var(--border,#ddd);border-radius:5px"/></div>
+            </div>
+            <div class="pw-row">
+              <div class="pw-label">Password</div>
+              <div class="pw-ctrl"><input type="text" id="emailPassword" placeholder="App password" style="width:160px;font-size:12px;padding:4px 8px;border:1px solid var(--border,#ddd);border-radius:5px"/></div>
+            </div>
+          </div>
+
+          <!-- Addresses card -->
+          <div class="pw-card">
+            <div class="pw-card-title">Addresses</div>
+            <div class="pw-row">
+              <div class="pw-label">From</div>
+              <div class="pw-ctrl"><input type="text" id="emailFrom" placeholder="alerts@sandman.co.in" style="width:180px;font-size:12px;padding:4px 8px;border:1px solid var(--border,#ddd);border-radius:5px"/></div>
+            </div>
+            <div class="pw-row">
+              <div class="pw-label">Reply-To</div>
+              <div class="pw-ctrl"><input type="text" id="emailReplyTo" placeholder="(optional)" style="width:180px;font-size:12px;padding:4px 8px;border:1px solid var(--border,#ddd);border-radius:5px"/></div>
+            </div>
+            <div class="pw-row">
+              <div class="pw-label">Dashboard</div>
+              <div class="pw-ctrl"><input type="text" id="emailDashUrl" value="http://localhost:5055" style="width:180px;font-size:12px;padding:4px 8px;border:1px solid var(--border,#ddd);border-radius:5px"/></div>
+            </div>
+            <div class="pw-row">
+              <div class="pw-label">Customer Name</div>
+              <div class="pw-ctrl">
+                <input type="text" id="emailDashUser" placeholder="e.g. GPI" style="width:140px;font-size:12px;padding:4px 8px;border:1px solid var(--border,#ddd);border-radius:5px"/>
+              </div>
+            </div>
+            <div style="font-size:10px;color:#aaa;padding:0 0 4px 8px;">Shown as "Customer :" in alert emails. Also appended to dashboard URL as ?user=</div>
+          </div>
+
+          <!-- Alert Types card -->
+          <div class="pw-card">
+            <div class="pw-card-title">Alert Types</div>
+            <div class="pw-row">
+              <div class="pw-label">Bad Batch</div>
+              <div class="pw-ctrl"><div class="tog"><label class="tog-sw"><input type="checkbox" id="emailBadBatch" checked style="accent-color:var(--accent)"/><span class="tog-track"></span></label></div></div>
+            </div>
+            <div class="pw-row">
+              <div class="pw-label">Prescription</div>
+              <div class="pw-ctrl"><div class="tog"><label class="tog-sw"><input type="checkbox" id="emailPrescription" checked style="accent-color:var(--accent)"/><span class="tog-track"></span></label></div></div>
+            </div>
+            <div class="pw-row">
+              <div class="pw-label">SI Warning / Critical</div>
+              <div class="pw-ctrl"><div class="tog"><label class="tog-sw"><input type="checkbox" id="emailSI" checked style="accent-color:var(--accent)"/><span class="tog-track"></span></label></div></div>
+            </div>
+          </div>
+
+        </div><!-- /pw-grid -->
+
+        <!-- Recipients section — per-user alert type config -->
+        <div style="margin-top:4px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#888;margin-bottom:10px">
+            Recipients &amp; Alert Types
+          </div>
+          <div style="overflow-x:auto;margin-bottom:10px;">
+            <table id="emailRecipientTable" style="border-collapse:collapse;min-width:620px;width:100%">
+              <thead>
+                <tr style="background:#f8fafc;">
+                  <th style="padding:8px 12px;font-size:11px;font-weight:700;color:#64748b;text-align:left;border:1px solid #e2e8f0;min-width:220px">Email</th>
+                  <th style="padding:8px 10px;font-size:11px;font-weight:700;color:#64748b;text-align:center;border:1px solid #e2e8f0;white-space:nowrap">SI</th>
+                  <th style="padding:8px 10px;font-size:11px;font-weight:700;color:#64748b;text-align:center;border:1px solid #e2e8f0;white-space:nowrap">Bad Batch</th>
+                  <th style="padding:8px 10px;font-size:11px;font-weight:700;color:#64748b;text-align:center;border:1px solid #e2e8f0;white-space:nowrap">Prescription</th>
+                  <th style="padding:8px 10px;font-size:11px;font-weight:700;color:#64748b;text-align:center;border:1px solid #e2e8f0;white-space:nowrap">Data Flow</th>
+                  <th style="padding:8px 10px;font-size:11px;font-weight:700;color:#64748b;text-align:center;border:1px solid #e2e8f0;white-space:nowrap">Prediction</th>
+                  <th style="padding:8px 6px;font-size:11px;font-weight:700;color:#64748b;text-align:center;border:1px solid #e2e8f0;"></th>
+                </tr>
+              </thead>
+              <tbody id="emailRecipientList"></tbody>
+            </table>
+          </div>
+          <input type="hidden" id="emailTo"/>
+          <button type="button" onclick="emailAddRecipient()"
+            style="font-size:12px;padding:5px 14px;border:1px solid var(--accent-bd,#2d7a4f);
+                   border-radius:6px;background:var(--accent-lt,#d4f0e0);color:var(--accent,#2d7a4f);
+                   cursor:pointer;font-family:inherit;font-weight:600">
+            + Add recipient
+          </button>
+        </div>
+
+        <!-- Test button -->
+        <div style="display:flex;align-items:center;gap:12px;margin-top:20px">
+          <button class="btn-save" style="background:#1a50a0" onclick="testEmail()" id="testEmailBtn">
+            Send Test Email
+          </button>
+          <span id="testEmailMsg" style="font-size:13px"></span>
+        </div>
+
+      </div><!-- /email sec -->
+
+
+      
+    </div>
+
+
+
+    </div><!-- /cfgArea -->
+  </div><!-- /cfg-shell -->
+</div><!-- /page -->
+
+<script>
+/* ── State ── */
+let foundries = [], lineNames = {}, paramNames = {}, _norm = {};
+let curDB = '', curLine = null, curMeta = null, curCustomerPkey = '';
+
+/* ── Tab switch ── */
+let _tabPanels, _tabBtns;
+function tab(id, btn) {
+  if (!_tabPanels) _tabPanels = document.querySelectorAll('.tab-panel');
+  if (!_tabBtns)   _tabBtns   = document.querySelectorAll('.tab-btn');
+  _tabPanels.forEach(p => p.classList.remove('active'));
+  _tabBtns.forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  if (btn) btn.classList.add('active');
+}
+
+/* ── Name resolution ── */
+function nrm(s) { return s.toLowerCase().replace(/[_\s\-]/g,''); }
+function buildNorm() { _norm = {}; for (const [k,v] of Object.entries(paramNames)) _norm[nrm(k)]=v; }
+function uiN(col) {
+  if (paramNames[col]) return paramNames[col];
+  const n = nrm(col);
+  if (_norm[n]) return _norm[n];
+  return col.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+}
+
+/* ── Init ── */
+async function init() {
+  try {
+    foundries = await fetch('/api/config/foundries').then(r=>r.json());
+    if (foundries.error) throw new Error(foundries.error);
+    await buildCustDrop();
+  } catch(e) {
+    document.getElementById('selC').innerHTML = `<option>Error: ${e.message}</option>`;
+  }
+}
+async function buildCustDrop() {
+  const seen = new Map();
+  for (const f of foundries)
+    if (!seen.has(f.db_name)) seen.set(f.db_name,{display:f.display_name,db:f.db_name});
+  const sel = document.getElementById('selC');
+  sel.innerHTML = '<option value="">— Select a customer —</option>';
+  for (const [db,g] of seen) {
+    const o = document.createElement('option');
+    o.value = db;
+    o.textContent = `${g.display}  (${db})`;
+    sel.appendChild(o);
+  }
+
+  // Auto-select from ?user= URL param using user-foundry API
+  const urlUser = new URLSearchParams(window.location.search).get('user');
+  if (urlUser) {
+    try {
+      const uf = await fetch(`/api/user-foundry?user=${encodeURIComponent(urlUser)}`).then(r=>r.json());
+      if (uf && uf.db_name && !uf.error) {
+        sel.value = uf.db_name;
+        onCustomer();
+      }
+    } catch(_) {}
+  }
+}
+
+/* ── Customer change ── */
+async function onCustomer() {
+  const db = document.getElementById('selC').value;
+  curDB = db;
+  const sl = document.getElementById('selL');
+  document.getElementById('cfgArea').style.display = 'none';
+  document.getElementById('lineStat').style.display = 'none';
+  clearSaveMsgs();
+  if (!db) { sl.innerHTML='<option value="">— Select customer first —</option>'; sl.disabled=true; return; }
+  sl.disabled = true; sl.innerHTML = '<option>Loading…</option>';
+  try { lineNames = await fetch(`/api/config/foundry-line-names?db=${enc(db)}`).then(r=>r.json()); }
+  catch { lineNames = {}; }
+  const lines = foundries.filter(f=>f.db_name===db)
+    .sort((a,b)=>{ const r=x=>x.active?0:x.has_any_data?1:2; return r(a)-r(b)||a.foundry_line_id-b.foundry_line_id; });
+  sl.innerHTML = '<option value="">— Select a foundry line —</option>';
+  for (const l of lines) {
+    const o = document.createElement('option');
+    o.value = l.foundry_line_id;
+    const nm = lineNames[l.foundry_line_id] || '';
+    const tag = l.active?' ● Active':l.has_any_data?' ○ Has Data':' — No Data';
+    o.textContent = nm ? `${nm}  (Line ${l.foundry_line_id})${tag}` : `Line ${l.foundry_line_id}${tag}`;
+    if (!l.has_any_data && !l.active) o.style.color='#bbb';
+    sl.appendChild(o);
+  }
+  sl.disabled = false;
+
+  // Auto-select first active line if ?user= param was provided
+  const urlUser = new URLSearchParams(window.location.search).get('user');
+  if (urlUser && sl.options.length > 1) {
+    const activeLine = lines.find(l => l.active) || lines[0];
+    if (activeLine) {
+      sl.value = activeLine.foundry_line_id;
+      onLine();
+    }
+  }
+}
+
+/* ── Line change ── */
+let _onLineReqId = 0;
+async function onLine() {
+  const lid = parseInt(document.getElementById('selL').value);
+  if (!lid||!curDB) { document.getElementById('cfgArea').style.display='none'; return; }
+  const reqId = ++_onLineReqId;   // stale-response guard
+  curLine = lid;
+  curMeta = foundries.find(f=>f.db_name===curDB&&f.foundry_line_id===lid);
+  showLineStat(curMeta);
+  setLoading();
+  document.getElementById('cfgArea').style.display = 'block';
+  clearSaveMsgs();
+  try {
+    const db = enc(curDB);
+    const [pR,cR,nR] = await Promise.all([
+      fetch(`/api/config/foundry-params?db=${db}&line_id=${lid}`),
+      fetch(`/api/config/foundry-config?db=${db}&line_id=${lid}`),
+      fetch(`/api/config/foundry-param-names?db=${db}&line_id=${lid}`),
+    ]);
+    if (reqId !== _onLineReqId) return;  // discard stale response
+    const [params, cfg, paramNames_] = await Promise.all([pR.json(), cR.json(), nR.json()]);
+    if (reqId !== _onLineReqId) return;
+    paramNames = paramNames_; buildNorm();
+    curCustomerPkey = String(cfg.customer_pkey || curLine || '');
+    paramEngineConfigs = cfg.property_engine_config || {};
+    const _lims = cfg.param_chart_limits || {};
+    renderPList('psL',    params.prepared_sand||[], new Set(cfg.si_params    ||[]), true,  undefined,             cfg.optimal_values||{}, _lims);
+    renderPList('addL',   params.additive||[],      new Set(cfg.add_params  ||[]), false, cfg.enable_additive!==false, undefined, _lims);
+    renderPList('smcL',   params.prepared_sand_extra||[],   new Set(cfg.smc_params  ||[]), false, cfg.enable_smc!==false,      undefined, _lims);
+    renderPList('svL',    params.sieve||[],         new Set(cfg.sv_params   ||[]), false, cfg.enable_sieve!==false,    undefined, _lims);
+    renderPList('metalL', params.metal||[],         new Set(cfg.metal_params||[]), false, cfg.enable_metal!==false,   undefined, _lims);
+    populateBbwCols(params.additive || []);
+    populateSwBandOpts(params.sieve || []);
+    fillEngine(cfg); fillMonitor(cfg); fillTrigger(cfg); fillPrescription(cfg, params.prescription || []);
+    fillNotifications(cfg);
+  } catch(e) {
+    ['psL','addL','smcL','svL','metalL'].forEach(id=>{
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = `<div class="save-err" style="padding:8px">Error: ${e.message}</div>`;
+    });
+    console.error('onLine failed:', e);
+  }
+}
+function reload() { onLine(); }
+
+function setLoading() {
+  ['psL','addL','smcL','svL','metalL'].forEach(id=>{
+    document.getElementById(id).innerHTML='<div class="loading"><span class="spin"></span>Loading…</div>';
+  });
+}
+
+/* ── Render parameter list ── */
+// optVals: {col: value} — adds Optimal Value column (PS section only)
+function renderPList(id, cols, sel, isPS, enDef, optVals, limVals) {
+  const el = document.getElementById(id);
+  if (!cols.length) { el.innerHTML='<div class="na-msg">Not available in this database.</div>'; return; }
+  const showOpt = isPS && optVals !== undefined;
+  const showCfg = isPS;
+  const lims    = limVals || {};
+  const optCls  = showOpt ? ' has-opt' : '';
+  const cfgCls  = showCfg ? ' has-cfg' : '';
+  const rowCls  = optCls + ' has-lim' + cfgCls;
+  let h = '';
+  if (!isPS) {
+    const chk = enDef!==false ? 'checked' : '';
+    h += `<div class="en-row"><input type="checkbox" id="en_${id}" ${chk}/><label for="en_${id}">Enable monitoring for this data source</label></div>`;
+  }
+  const allChk = cols.every(c=>sel.has(c));
+  h += `<div class="plist">
+    <div class="plist-head${rowCls}">
+      <input type="checkbox" id="sa_${id}" ${allChk?'checked':''} onchange="togAll('${id}',this.checked)" style="accent-color:var(--accent);cursor:pointer;"/>
+      <span>Parameter Name</span>
+      ${showOpt ? '<span>Optimal Value</span>' : ''}
+      <span style="text-align:center;font-size:10px">LCL</span>
+      <span style="text-align:center;font-size:10px">UCL</span>
+      <span>Column</span>
+      ${showCfg ? '<span style="text-align:center;">Config</span>' : ''}
+    </div>`;
+  for (const c of cols) {
+    const ui     = uiN(c);
+    const chk    = sel.has(c) ? 'checked' : '';
+    const oVal   = (showOpt && optVals && optVals[c] != null) ? optVals[c] : '';
+    const lclVal = (lims[c] != null && lims[c].min != null) ? lims[c].min : '';
+    const uclVal = (lims[c] != null && lims[c].max != null) ? lims[c].max : '';
+    const hasCst = paramEngineConfigs[c] ? ' has-custom' : '';
+    const cfgBtn = showCfg
+      ? `<button class="param-eng-btn${hasCst}" id="pecb_${c}" title="Configure engines for ${ui}" onclick="openParamEngine('${c}')">⚙</button>`
+      : '';
+    h += `<div class="prow${rowCls}">
+      <input type="checkbox" id="p_${id}_${c}" value="${c}" data-s="${id}" ${chk} onchange="syncSA('${id}')"/>
+      <label class="prow-name" for="p_${id}_${c}">${ui}</label>
+      ${showOpt ? `<div class="prow-opt"><input type="number" id="opt_${c}" value="${oVal}" step="any" placeholder="—"/></div>` : ''}
+      <div class="prow-lim"><input type="number" id="lcl_${c}" value="${lclVal}" step="any" placeholder="—" title="LCL (min)"/></div>
+      <div class="prow-lim"><input type="number" id="ucl_${c}" value="${uclVal}" step="any" placeholder="—" title="UCL (max)"/></div>
+      <span class="prow-col">${c}</span>
+      ${cfgBtn}
+    </div>`;
+  }
+  h += '</div>';
+  el.innerHTML = h;
+}
+function togAll(s,on) { document.querySelectorAll(`[data-s="${s}"]`).forEach(c=>{c.checked=on;}); }
+function syncSA(s) {
+  const cbs=[...document.querySelectorAll(`[data-s="${s}"]`)];
+  const sa=document.getElementById(`sa_${s}`);
+  if (sa) sa.checked=cbs.every(c=>c.checked);
+}
+
+/* ── Fill engine tab ── */
+function fillEngine(cfg) {
+  if (!document.getElementById('wV')) return; // engine tab not present
+  const w=cfg.si_weights||{};
+  sv('wV',Math.round((w.variance??0.35)*100)); sv('wD',Math.round((w.drift??0.45)*100)); sv('wO',Math.round((w.oscillation??0.20)*100)); wSum();
+  const t=cfg.alert_thresholds||{};
+  sv('thrS',t.stable_max??20); sv('thrW',t.watch_max??49); sv('thrA',t.alert_max??69); siBands();
+  const l=cfg.alert_labels||{};
+  sv('lblS',l.stable||'STABLE'); sv('lblW',l.watch||'WATCH'); sv('lblA',l.alert||'ALERT'); sv('lblC',l.critical||'CRITICAL');
+  const ve=(cfg.engines||{}).variance||{};
+  sv('vtW',Math.round((ve.score_watch_max??0.35)*100)); sv('vtE',Math.round((ve.score_elevated_max??0.60)*100)); sv('vtH',Math.round((ve.score_high_var_min??0.85)*100)); varBands();
+  const vl=ve.labels||{};
+  sv('vlS',vl.stable||'STABLE'); sv('vlW',vl.watch||'WATCH'); sv('vlE',vl.elevated||'ELEVATED'); sv('vlH',vl.high_var||'HIGH VAR');
+  const de=(cfg.engines||{}).drift||{};
+  sv('dtSl',de.slight_sigma??1.0); sv('dtSt',de.strong_sigma??3.0); sv('dtSlop',de.slope_sigma??1.0);
+  sv('dtSlT',de.slight_trend_score??0.2); sv('dtStT',de.strong_trend_score??0.5);
+  syncStrongTrendMin();
+  const dl=de.labels||{};
+  sv('dlS',dl.stable||'STABLE'); sv('dlSD',dl.slight_drift||'SLIGHT DRIFT'); sv('dlStD',dl.strong_drift||'STRONG DRIFT');
+  sv('dlSlT',dl.slight_trend||'SLIGHT TREND'); sv('dlStT',dl.strong_trend||'STRONG TREND');
+  const oe=(cfg.engines||{}).oscillation||{};
+  sv('otM',Math.round((oe.mild_ratio??0.40)*100)); sv('otO',Math.round((oe.osc_ratio??0.70)*100)); oscBands();
+  const ol=oe.labels||{};
+  sv('olS',ol.stable||'STABLE'); sv('olM',ol.mild||'MILD'); sv('olO',ol.oscillating||'OSCILLATING');
+}
+
+/* ── Fill monitoring tab ── */
+/* ── Populate Optimal Values table ────────────────────────────────────────── */
+function populateOptimalValues(psCols, optVals) {
+  const tbody = document.getElementById('opt-val-tbody');
+  if (!psCols || !psCols.length) {
+    tbody.innerHTML = '<tr><td colspan="3" style="color:#aaa;font-style:italic;">No prepared sand parameters configured.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = psCols.map(col => {
+    const displayName = uiN(col);
+    const val = (optVals && optVals[col] != null) ? optVals[col] : '';
+    return `<tr>
+      <td style="font-weight:500;">${displayName}</td>
+      <td><input type="number" id="opt_${col}" value="${val}" step="any"
+           style="width:100px;border:1px solid #bbb;border-radius:3px;padding:4px 6px;font-size:13px;" /></td>
+      <td style="font-size:11px;color:#bbb;font-family:monospace;">${col}</td>
+    </tr>`;
+  }).join('');
+}
+
+function collectOptimalValues(psCols) {
+  const result = {};
+  for (const col of psCols) {
+    const el = document.getElementById(`opt_${col}`);
+    if (el && el.value.trim() !== '') result[col] = parseFloat(el.value);
+  }
+  return result;
+}
+
+function fillMonitor(cfg) {
+  // Monitoring active toggle
+  const monCb = document.getElementById('monitoringEnabled');
+  if (monCb) {
+    const on = cfg.monitoring_enabled === true;
+    monCb.checked = on;
+    monCb.dispatchEvent(new Event('change'));
+  }
+  // hidden fields kept for compat
+  const bl=cfg.baseline||{};
+  sv('blSt', bl.start_date||'2025-07-01');
+  sv('blEn', bl.end_date||'2025-07-31');
+  sv('pctW', cfg.pct_change_warning??5.0);
+  // Window-mode specific
+  sv('trWinN',       cfg.trigger?.window_n         ?? 1);
+  sv('windowFetchDays', cfg.window_fetch_days       ?? 14);
+  sv('sigmaOkThr',   cfg.sigma_ok_thr              ?? 1.0);
+  sv('sigmaWarnThr', cfg.sigma_warn_thr             ?? 2.0);
+  sv('sigmaAlertThr',cfg.sigma_alert_thr            ?? 3.0);
+
+  // ── Aggregation mode ──
+  const aggMode = cfg.aggregation_mode || 'window';
+  sdd('aggMode', aggMode);
+  const isComp = aggMode === 'component';
+  const isWin  = aggMode === 'window';
+  const dualOn = cfg.dual_mode === true;
+  sv('reportWindow', cfg.report_window ?? 5);
+  if(document.getElementById('reportWindowRow'))
+    document.getElementById('reportWindowRow').style.display = isWin ? 'none' : 'flex';
+  if(document.getElementById('dualModeRow'))
+    document.getElementById('dualModeRow').style.display = isComp ? 'flex' : 'none';
+  const dualCb = document.getElementById('dualMode');
+  if(dualCb) {
+    dualCb.checked = dualOn;
+    document.getElementById('dualModeLbl').textContent = dualOn ? 'On' : 'Off';
+  }
+  if(document.getElementById('dualSecRow'))
+    document.getElementById('dualSecRow').style.display = (isComp && dualOn) ? 'flex' : 'none';
+  sdd('dualModeSec', cfg.dual_mode_secondary || 'shift');
+}
+
+/* ── Fill trigger tab ── */
+function fillTrigger(cfg) {
+  const tr=cfg.trigger||{};
+  sv('trCool',tr.cooldown_seconds??300); sv('trIntv',tr.check_interval_seconds??300);
+  sv('trHour',tr.day_end_hour??6); sv('trMin',tr.day_end_minute??0);
+  sv('trWinN',tr.window_n??1);
+  document.getElementById('trSkip').checked = tr.skip_additive!==false;
+}
+
+/* ── Fill prescription tab ── */
+function renderPrescriptionParams(availParams, monitored) {
+  const el = document.getElementById('pwParamList');
+  if (!availParams || !availParams.length) {
+    el.innerHTML = '<div class="na-msg">No prescription data found for this foundry line.</div>';
+    return;
+  }
+  let h = `<div class="plist">
+    <div class="plist-head">
+      <input type="checkbox" id="pwSelAll" onchange="pwTogAll(this.checked)" style="accent-color:#c0392b;cursor:pointer;"/>
+      <span>Parameter</span>
+      <span>Column</span>
+    </div>`;
+  for (const p of availParams) {
+    const chk = monitored.has(p.key) ? 'checked' : '';
+    h += `<div class="prow">
+      <input type="checkbox" class="pw-param" value="${p.key}" id="pw_${p.key}" ${chk} onchange="pwSyncAll()"/>
+      <label class="prow-name" for="pw_${p.key}">${p.label}</label>
+      <span class="prow-col">${p.column}</span>
+    </div>`;
+  }
+  h += '</div>';
+  el.innerHTML = h;
+  pwSyncAll();
+}
+
+function fillPrescription(cfg, availParams) {
+  const pw = cfg.prescription_watchdog || {};
+  const en = pw.enabled !== false;
+  document.getElementById('pwEnable').checked   = en;
+  document.getElementById('pwEnableLbl').textContent = en ? 'On' : 'Off';
+  sv('pwTol',         pw.tolerance_pct      ?? 1.0);
+  sv('pwWatchThr',    pw.watch_thr          ?? 1.0);
+  sv('pwAlertThr',    pw.alert_thr          ?? 3.0);
+  sv('pwCriticalThr', pw.critical_thr       ?? 6.0);
+  sv('pwTrendWindow', pw.trend_window       ?? 5);
+  sv('pwTrendMin',    pw.trend_min_batches  ?? 3);
+  sv('pwPoll',        pw.poll_interval_sec  ?? 30);
+  sv('pwIdle',        pw.idle_timeout_min   ?? 60);
+  const skipZ = pw.skip_zero_batches !== false;
+  document.getElementById('pwSkipZero').checked = skipZ;
+  document.getElementById('pwSkipZeroLbl').textContent = skipZ ? 'On' : 'Off';
+  const spEn = pw.setpoint_monitoring !== false;
+  document.getElementById('pwSetpointEnable').checked = spEn;
+  document.getElementById('pwSetpointEnableLbl').textContent = spEn ? 'On' : 'Off';
+  sv('pwSetpointTol', pw.setpoint_tolerance ?? 0.5);
+  // Default: all available params monitored unless config says otherwise
+  const savedMonitored = pw.monitored_params;
+  const monitored = new Set(
+    savedMonitored && savedMonitored.length
+      ? savedMonitored
+      : (availParams || []).map(p => p.key)
+  );
+  renderPrescriptionParams(availParams || [], monitored);
+
+  // ── Component Change Watchdog ──
+  const ccw = cfg.component_change_watchdog || {};
+  const ccwOn = ccw.enabled === true;
+  document.getElementById('ccwEnable').checked = ccwOn;
+  document.getElementById('ccwEnableLbl').textContent = ccwOn ? 'On' : 'Off';
+  const ccwScada = ccw.use_scada === true;
+  document.getElementById('ccwUseScada').checked = ccwScada;
+  document.getElementById('ccwUseScadaLbl').textContent = ccwScada ? 'SCADA table' : 'Additive table';
+  sv('ccwPoll', ccw.poll_interval_sec ?? 30);
+  sv('ccwIdle', ccw.idle_timeout_min  ?? 0);
+
+  // ── Bad Batch Watchdog ──
+  const bbw = cfg.bad_batch_watchdog || {};
+  const bbwOn = bbw.enabled === true;
+  document.getElementById('bbwEnable').checked = bbwOn;
+  document.getElementById('bbwEnableLbl').textContent = bbwOn ? 'On' : 'Off';
+  sv('bbwThreshold',   bbw.threshold          ?? 2.0);
+  sv('bbwWatchThr',    bbw.watch_thr          ?? 1.0);
+  sv('bbwAlertThr',    bbw.alert_thr          ?? 2.0);
+  sv('bbwCriticalThr', bbw.critical_thr       ?? 3.0);
+  sv('bbwPctOkThr',    Math.round((bbw.pct_ok_thr        ?? 0.02) * 1000) / 10);
+  sv('bbwPctWarnThr',  Math.round((bbw.pct_warn_thr      ?? 0.05) * 1000) / 10);
+  sv('bbwPctCritThr',  Math.round((bbw.pct_critical_thr  ?? 0.10) * 1000) / 10);
+  bbwToggleMode(bbw.detection_mode || 'absolute');
+  sdd('bbwSmcCol',     bbw.smc_col            ?? 'compactability_smc_pct');
+  sdd('bbwCospCol',    bbw.cosp_col          ?? 'cosp_percentage_pct');
+  sv('bbwPoll',        bbw.poll_interval_sec ?? 30);
+  sv('bbwIdle',        bbw.idle_timeout_min  ?? 0);
+
+  // ── SMC Batch Watchdog ──
+  const smcBw = cfg.smc_batch_watchdog || {};
+  const smcBwOn = smcBw.enabled === true;
+  document.getElementById('smcEnable').checked = smcBwOn;
+  document.getElementById('smcEnableLbl').textContent = smcBwOn ? 'On' : 'Off';
+  const smcSigOn = smcBw.sigma_alerts_enabled === true;
+  document.getElementById('smcSigmaEnable').checked = smcSigOn;
+  document.getElementById('smcSigmaEnableLbl').textContent = smcSigOn ? 'On' : 'Off';
+  sv('smcSigmaThr',  smcBw.sigma_threshold    ?? 3.0);
+  sv('smcSigmaDays', smcBw.sigma_window_days  ?? 30);
+  sv('smcPoll',      smcBw.poll_interval_sec  ?? 30);
+  sv('smcCooldown',  smcBw.cooldown_sec       ?? 300);
+
+  const sw = cfg.sieve_watchdog || {};
+  const swOn = sw.enabled === true;
+  document.getElementById('swEnable').checked = swOn;
+  document.getElementById('swEnableLbl').textContent = swOn ? 'On' : 'Off';
+  const swEmailOn = sw.email_enabled === true;
+  document.getElementById('swEmailEnable').checked = swEmailOn;
+  document.getElementById('swEmailEnableLbl').textContent = swEmailOn ? 'On' : 'Off';
+  sv('swOkThr',    sw.ok_thr             ?? 1.0);
+  sv('swWarnThr',  sw.warn_thr           ?? 3.0);
+  sv('swThreshold',sw.critical_thr ?? sw.pct_change_warning ?? 5.0);
+  sv('swPoll',     sw.poll_interval_sec  ?? 60);
+  sv('swIdle',     sw.idle_timeout_min   ?? 0);
+  // Populate per-band threshold rows
+  const wrap = document.getElementById('swBandThrWrap');
+  wrap.innerHTML = '';
+  const bt = sw.band_thresholds || {};
+  Object.entries(bt).forEach(([band, thr]) => swAddBandThr(band, thr));
+
+  // ── Additive Timing Delay ──
+  const _delay = parseInt(cfg.additive_delay_seconds) || 0;
+  sv('addDelaySec', _delay);
+  _updateAddDelayLabel(_delay);
+
+  // ── Prediction Monitor ──
+  const pm = cfg.prediction_monitor || {};
+  const pmOn = pm.enabled === true;
+  document.getElementById('pmEnable').checked = pmOn;
+  document.getElementById('pmEnableLbl').textContent = pmOn ? 'On' : 'Off';
+  sv('pmGrace', pm.grace_minutes     ?? 30);
+  sv('pmPoll',  pm.poll_interval_sec ?? 300);
+  populateDfSources(cfg.data_flow || {});
+  populateCostSaving(cfg.cost_saving || {});
+}
+
+function populateCostSaving(cs) {
+  const on = cs.enabled === true;
+  const enEl = document.getElementById('csEnable');
+  const lblEl = document.getElementById('csEnableLbl');
+  if (enEl)  enEl.checked = on;
+  if (lblEl) lblEl.textContent = on ? 'On' : 'Off';
+  const bsEl = document.getElementById('csBaselineStart');
+  const beEl = document.getElementById('csBaselineEnd');
+  const cEl  = document.getElementById('csCostPerMt');
+  const curEl = document.getElementById('csCurrency');
+  const symEl = document.getElementById('csCurrencySymbol');
+  if (bsEl)  bsEl.value = cs.baseline_start || '';
+  if (beEl)  beEl.value = cs.baseline_end   || '';
+  if (cEl)   cEl.value  = cs.cost_per_mt    ?? 7000;
+  const cur = (cs.currency || 'INR').toUpperCase();
+  if (curEl) curEl.value = cur;
+  if (symEl) symEl.innerHTML = cur === 'USD' ? '$' : cur === 'EUR' ? '&euro;' : '&#8377;';
+}
+
+function collectCostSaving() {
+  return {
+    enabled       : document.getElementById('csEnable')?.checked      || false,
+    baseline_start: document.getElementById('csBaselineStart')?.value  || '',
+    baseline_end  : document.getElementById('csBaselineEnd')?.value    || '',
+    cost_per_mt   : parseFloat(document.getElementById('csCostPerMt')?.value) || 7000,
+    currency      : document.getElementById('csCurrency')?.value       || 'INR',
+  };
+}
+
+const _DF_SOURCES = [
+  { key: 'scada',             label: 'SCADA / PLC',              desc: 'Real-time machine signals from PLC / SCADA system' },
+  { key: 'additive',          label: 'Additive (Mixer PLC)',      desc: 'Per-batch additive discharge data from mixer PLC' },
+  { key: 'preparedsand_extra',label: 'Prepared Sand (PLC)',       desc: 'Per-batch SMC discharge data from sand plant PLC' },
+  { key: 'preparedsand',      label: 'Prepared Sand (Lab)',       desc: 'Shift-level sand property measurements from lab' },
+  { key: 'consumption',       label: 'Consumption / Shift Data',  desc: 'Shift-level additive consumption and production counts' },
+  { key: 'rejections',        label: 'Rejections',                desc: 'Casting rejection events' },
+];
+
+function populateDfSources(dfCfg) {
+  const container  = document.getElementById('dfSourceToggles');
+  if (!container) return;
+  const disabled   = dfCfg.disabled_sources || [];
+  container.innerHTML = '';
+  _DF_SOURCES.forEach(s => {
+    const isOn = !disabled.includes(s.key);
+    const row  = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#fafafa;border:1px solid #e8e8e8;border-radius:8px';
+    row.innerHTML = `
+      <div>
+        <div style="font-size:13px;font-weight:600;color:#1a1a1a">${s.label}</div>
+        <div style="font-size:11px;color:#888;margin-top:2px">${s.desc}</div>
+      </div>
+      <div class="tog" style="margin-left:16px">
+        <label class="tog-sw">
+          <input type="checkbox" id="df_${s.key}" ${isOn ? 'checked' : ''}
+            onchange="document.getElementById('df_${s.key}_lbl').textContent=this.checked?'On':'Off'">
+          <span class="tog-track"></span>
+        </label>
+        <span class="tog-lbl" id="df_${s.key}_lbl">${isOn ? 'On' : 'Off'}</span>
+      </div>`;
+    container.appendChild(row);
+  });
+}
+
+function collectDfSources() {
+  const disabled = [];
+  _DF_SOURCES.forEach(s => {
+    const cb = document.getElementById('df_' + s.key);
+    if (cb && !cb.checked) disabled.push(s.key);
+  });
+  return { disabled_sources: disabled };
+}
+
+/* ── Additive delay label helper ── */
+function _updateAddDelayLabel(sec) {
+  const el = document.getElementById('addDelayMin');
+  if (!el) return;
+  const s = parseInt(sec) || 0;
+  el.textContent = Math.floor(s / 60) + ' min ' + (s % 60) + ' sec';
+}
+document.addEventListener('DOMContentLoaded', function() {
+  var inp = document.getElementById('addDelaySec');
+  if (inp) inp.addEventListener('input', function() { _updateAddDelayLabel(this.value); });
+});
+
+/* ── Populate BBW column dropdowns from additive params ── */
+let _bbwCols = [];
+function populateBbwCols(cols) {
+  _bbwCols = cols;
+  ['bbwSmcCol','bbwCospCol'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— Select a column —</option>';
+    cols.forEach(c => {
+      const o = document.createElement('option');
+      o.value = c;
+      o.textContent = uiN(c) + '  (' + c + ')';
+      sel.appendChild(o);
+    });
+    if (cur) sel.value = cur;
+  });
+}
+
+/* ── Populate sieve band name options (used in swAddBandThr) ── */
+let _swBandOpts = [];
+function populateSwBandOpts(cols) {
+  _swBandOpts = cols;
+}
+
+/* ── Email recipient table (per-user alert types) ── */
+const _EMAIL_TYPES = [
+  { key: 'SI',                  label: 'SI'          },
+  { key: 'BAD_BATCH',           label: 'Bad Batch'   },
+  { key: 'PRESCRIPTION',        label: 'Prescription'},
+  { key: 'DATA_FLOW',           label: 'Data Flow'   },
+  { key: 'PREDICTION_MISSING',  label: 'Prediction'  },
+];
+
+function emailAddRecipient(addr='', types=null) {
+  const tbody = document.getElementById('emailRecipientList');
+  const defaultTypes = types || _EMAIL_TYPES.map(t => t.key);
+  const tr = document.createElement('tr');
+  const cbCells = _EMAIL_TYPES.map(t => {
+    const checked = defaultTypes.includes(t.key) ? 'checked' : '';
+    return `<td style="padding:6px 10px;text-align:center;border:1px solid #e2e8f0;">
+      <input type="checkbox" data-type="${t.key}" ${checked}
+        style="width:15px;height:15px;accent-color:#2d7a4f;cursor:pointer;">
+    </td>`;
+  }).join('');
+  tr.innerHTML = `
+    <td style="padding:6px 8px;border:1px solid #e2e8f0;">
+      <input type="email" value="${addr}" placeholder="name@example.com"
+        style="width:100%;padding:4px 8px;border:1px solid #ddd;border-radius:5px;
+               font-size:12px;font-family:inherit;box-sizing:border-box"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();emailAddRecipient();}">
+    </td>
+    ${cbCells}
+    <td style="padding:6px;text-align:center;border:1px solid #e2e8f0;">
+      <button type="button" onclick="this.closest('tr').remove();"
+        style="padding:2px 8px;border:1px solid #ddd;border-radius:4px;background:#fff;
+               color:#c01616;font-size:12px;cursor:pointer;font-weight:700;">×</button>
+    </td>`;
+  tbody.appendChild(tr);
+  if (!addr) tr.querySelector('input[type=email]').focus();
+}
+
+function emailSyncHidden() {
+  /* kept for backward compat — collectEmailRecipients() is used in save() */
+}
+
+function emailLoadRecipients(recipientsOrAddrs) {
+  const tbody = document.getElementById('emailRecipientList');
+  tbody.innerHTML = '';
+  if (!recipientsOrAddrs || !recipientsOrAddrs.length) {
+    emailAddRecipient('');
+    return;
+  }
+  // Handle both new [{email, types}] and old ['email'] formats
+  recipientsOrAddrs.forEach(r => {
+    if (typeof r === 'string') {
+      emailAddRecipient(r, _EMAIL_TYPES.map(t => t.key));
+    } else {
+      emailAddRecipient(r.email || '', r.types || _EMAIL_TYPES.map(t => t.key));
+    }
+  });
+}
+
+function collectEmailRecipients() {
+  const rows = document.querySelectorAll('#emailRecipientList tr');
+  const result = [];
+  rows.forEach(tr => {
+    const emailEl = tr.querySelector('input[type=email]');
+    if (!emailEl) return;
+    const email = emailEl.value.trim();
+    if (!email) return;
+    const types = [...tr.querySelectorAll('input[data-type]')]
+      .filter(cb => cb.checked)
+      .map(cb => cb.dataset.type);
+    result.push({ email, types });
+  });
+  return result;
+}
+
+function swAddBandThr(band='', thr='') {
+  const wrap = document.getElementById('swBandThrWrap');
+  const row  = document.createElement('div');
+  row.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;';
+
+  // Build band name dropdown from sieve cols, fall back to text input if none loaded
+  let bandInput;
+  if (_swBandOpts.length) {
+    const sel = document.createElement('select');
+    sel.className = 'sw-band-name t-sel';
+    sel.style.cssText = 'min-width:200px;height:32px;font-size:13px;';
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = '— Select sieve band —';
+    sel.appendChild(placeholder);
+    _swBandOpts.forEach(c => {
+      const o = document.createElement('option');
+      o.value = c;
+      o.textContent = uiN(c) + '  (' + c + ')';
+      if (c === band) o.selected = true;
+      sel.appendChild(o);
+    });
+    bandInput = sel;
+  } else {
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.className = 'sw-band-name';
+    inp.placeholder = 'Band name (e.g. gfnAfs)';
+    inp.value = band;
+    inp.style.cssText = 'width:160px;font-size:13px;padding:0 8px;height:32px;border:1px solid rgba(255,255,255,0.65);border-radius:8px;background:rgba(255,255,255,0.72);';
+    bandInput = inp;
+  }
+
+  const thrInp = document.createElement('input');
+  thrInp.type = 'number';
+  thrInp.className = 'sw-band-thr';
+  thrInp.placeholder = '%';
+  thrInp.min = '0.1'; thrInp.max = '100'; thrInp.step = '0.1';
+  thrInp.value = thr;
+  thrInp.style.cssText = 'width:80px;font-size:13px;padding:0 8px;height:32px;border:1px solid rgba(255,255,255,0.65);border-radius:8px;background:rgba(255,255,255,0.72);';
+
+  const pmSpan = document.createElement('span');
+  pmSpan.textContent = '±';
+  pmSpan.style.cssText = 'font-size:13px;color:var(--muted);font-weight:500;';
+
+  const pctSpan = document.createElement('span');
+  pctSpan.textContent = '%';
+  pctSpan.style.cssText = 'font-size:13px;color:var(--muted);font-weight:500;';
+
+  const rmBtn = document.createElement('button');
+  rmBtn.type = 'button';
+  rmBtn.textContent = '✕';
+  rmBtn.style.cssText = 'font-size:12px;padding:4px 10px;height:32px;border:1px solid rgba(192,57,43,0.4);color:var(--red);border-radius:8px;background:rgba(192,57,43,0.06);cursor:pointer;font-family:inherit;transition:background .15s;';
+  rmBtn.onmouseenter = () => { rmBtn.style.background = 'rgba(192,57,43,0.14)'; };
+  rmBtn.onmouseleave = () => { rmBtn.style.background = 'rgba(192,57,43,0.06)'; };
+  rmBtn.onclick = () => row.remove();
+
+  row.appendChild(bandInput);
+  row.appendChild(pmSpan);
+  row.appendChild(thrInp);
+  row.appendChild(pctSpan);
+  row.appendChild(rmBtn);
+  wrap.appendChild(row);
+}
+function pwTogAll(on) { document.querySelectorAll('.pw-param').forEach(cb => { cb.checked = on; }); }
+function pwSyncAll() {
+  const all = [...document.querySelectorAll('.pw-param')];
+  const sa  = document.getElementById('pwSelAll');
+  if (sa) sa.checked = all.length > 0 && all.every(c => c.checked);
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const _toggleMap = {
+    pwEnable: 'pwEnableLbl', pwSkipZero: 'pwSkipZeroLbl',
+    ccwEnable: 'ccwEnableLbl',
+    // ccwUseScada excluded — has custom 'SCADA table'/'Additive table' label below
+    bbwEnable: 'bbwEnableLbl',
+    swEnable:      'swEnableLbl',
+    swEmailEnable: 'swEmailEnableLbl',
+  };
+  // Custom label for ccwUseScada — must NOT also be in _toggleMap (would overwrite with On/Off)
+  document.getElementById('ccwUseScada')?.addEventListener('change', function() {
+    document.getElementById('ccwUseScadaLbl').textContent = this.checked ? 'SCADA table' : 'Additive table';
+  });
+  Object.entries(_toggleMap).forEach(([id, lblId]) => {
+    document.getElementById(id)?.addEventListener('change', function() {
+      document.getElementById(lblId).textContent = this.checked ? 'On' : 'Off';
+    });
+  });
+});
+
+/* ── Sync Strong Trend Min auto-display & Slight Trend Max auto-display ── */
+function syncStrongTrendMin() {
+  const slightMin  = parseFloat(gv('dtSlT')) || 0.2;
+  const strongMin  = parseFloat(gv('dtStT')) || 0.5;
+  // Slight Trend Max = Strong Trend Min (auto label only)
+  const sltMax = document.getElementById('slt-max');
+  if (sltMax) sltMax.textContent = strongMin.toFixed(2);
+}
+
+/* ── Sync helpers ── */
+function wSum() {
+  const el=document.getElementById('wSum'); if(!el) return;
+  const s=(+gv('wV')||0)+(+gv('wD')||0)+(+gv('wO')||0);
+  el.textContent=s+'%'; el.className=Math.abs(s-100)<.5?'wt-sum-ok':'wt-sum-err';
+}
+function siBands() {
+  const s=+gv('thrS')||20, w=+gv('thrW')||49, a=+gv('thrA')||69;
+  setText('siM2',s+1); setText('siM3',w+1); setText('siM4',a+1);
+}
+function varBands() {
+  const w=+gv('vtW')||35, e=+gv('vtE')||60, h=+gv('vtH')||85;
+  setText('vM2',w+1); setText('vM3',e+1); setText('vM4',h+1);
+}
+function oscBands() {
+  const m=+gv('otM')||40, o=+gv('otO')||70;
+  setText('oM2',m+1); setText('oM3',o+1);
+}
+function secSync() {
+  const on=document.getElementById('mDual').checked;
+  const mSec=document.getElementById('mSec');
+  if(mSec) mSec.disabled=!on;
+  const dualLbl=document.getElementById('dualLbl');
+  if(dualLbl) dualLbl.textContent=on?'On':'Off';
+  const h=document.getElementById('secHint');
+  if(h){ h.textContent=on?'Runs alongside Component mode':'Enable Dual Mode first'; h.style.color=on?'#888':'#bbb'; }
+}
+
+/* ── Line status ── */
+function showLineStat(m) {
+  const b=document.getElementById('lineStat');
+  if(!m){b.style.display='none';return;}
+  let bc,bt;
+  if(m.error){bc='ls-error';bt='Error';}
+  else if(m.active){bc='ls-active';bt='Active';}
+  else if(m.has_any_data){bc='ls-hasdata';bt='Has Data';}
+  else{bc='ls-nodata';bt='No Data';}
+  b.innerHTML=`<span class="ls-badge ${bc}">${bt}</span>`+(m.last_date?`Last data: <strong>${m.last_date}</strong>`:'No data found');
+  b.style.display='flex';
+}
+
+/* ── Utilities ── */
+function enc(s){return encodeURIComponent(s);}
+function sv(id,v){const e=document.getElementById(id);if(e)e.value=v;}
+function gv(id){const e=document.getElementById(id);return e?e.value:'';}
+function _limVal(id){const v=gv(id).trim();return v===''?null:parseFloat(v);}
+function setText(id,v){const e=document.getElementById(id);if(e)e.textContent=v;}
+function sdd(id,v){const s=document.getElementById(id);if(!s)return;[...s.options].forEach(o=>{o.selected=o.value===String(v);});}
+function clearSaveMsgs(){['sm1','sm2','sm3','sm4','sm5','sm6','sm7'].forEach(id=>{const e=document.getElementById(id);if(e){e.textContent='';e.className='';}});}
+function setMsg(msg,ok){['sm1','sm2','sm3','sm4','sm5','sm6','sm7'].forEach(id=>{const e=document.getElementById(id);if(e){e.textContent=msg;e.className=ok?'save-ok':'save-err';}});}
+function setBtns(dis){['sb1','sb2','sb3','sb4','sb5','sb6','sb7'].forEach(id=>{const e=document.getElementById(id);if(e)e.disabled=dis;});}
+
+/* ── Save ── */
+async function save() {
+  if(!curDB||!curLine)return;
+  setBtns(true); clearSaveMsgs();
+  const si_params   =[...document.querySelectorAll('[data-s="psL"]:checked')].map(c=>c.value);
+  // Collect optimal values from the PS parameter list rows
+  const optimal_values = {};
+  document.querySelectorAll('[data-s="psL"]').forEach(cb => {
+    const el = document.getElementById(`opt_${cb.value}`);
+    if (el && el.value.trim() !== '') optimal_values[cb.value] = parseFloat(el.value);
+  });
+  // Per-parameter engine config (collected from modal interactions, not from the DOM directly)
+  const property_engine_config = paramEngineConfigs;
+  const add_params  =[...document.querySelectorAll('[data-s="addL"]:checked')].map(c=>c.value);
+  const smc_params  =[...document.querySelectorAll('[data-s="smcL"]:checked')].map(c=>c.value);
+  const sv_params   =[...document.querySelectorAll('[data-s="svL"]:checked')].map(c=>c.value);
+  const metal_params=[...document.querySelectorAll('[data-s="metalL"]:checked')].map(c=>c.value);
+  const enable_additive=document.getElementById('en_addL')?.checked??true;
+  const enable_smc=document.getElementById('en_smcL')?.checked??true;
+  const enable_sieve=document.getElementById('en_svL')?.checked??true;
+  const enable_metal=document.getElementById('en_metalL')?.checked??true;
+  const wv=+gv('wV')||35,wd=+gv('wD')||45,wo=+gv('wO')||20,wT=(wv+wd+wo)||100;
+  const monitoring_enabled = document.getElementById('monitoringEnabled')?.checked ?? false;
+  const payload={
+    monitoring_enabled,
+    si_params, add_params, smc_params, sv_params, metal_params,
+    optimal_values, property_engine_config,
+    enable_additive, enable_smc, enable_sieve, enable_metal,
+    aggregation_mode: gv('aggMode') || 'window',
+    dual_mode:        document.getElementById('dualMode')?.checked || false,
+    dual_mode_secondary: gv('dualModeSec') || 'shift',
+    report_window:    parseInt(gv('reportWindow')) || 5,
+    window_fetch_days: parseInt(gv('windowFetchDays'))||14,
+    sigma_ok_thr:    parseFloat(gv('sigmaOkThr'))   ||1.0,
+    sigma_warn_thr:  parseFloat(gv('sigmaWarnThr'))  ||2.0,
+    sigma_alert_thr: parseFloat(gv('sigmaAlertThr')) ||3.0,
+    pct_change_warning:parseFloat(gv('pctW'))||5.0,
+    baseline:{start_date:gv('blSt'),end_date:gv('blEn')},
+    si_weights:{variance:+(wv/wT).toFixed(4),drift:+(wd/wT).toFixed(4),oscillation:+(wo/wT).toFixed(4)},
+    alert_thresholds:{stable_max:+gv('thrS')||20,watch_max:+gv('thrW')||49,alert_max:+gv('thrA')||69},
+    alert_labels:{stable:gv('lblS')||'STABLE',watch:gv('lblW')||'WATCH',alert:gv('lblA')||'ALERT',critical:gv('lblC')||'CRITICAL'},
+    engines:{
+      variance:{score_watch_max:+gv('vtW')/100||.35,score_elevated_max:+gv('vtE')/100||.60,score_high_var_min:+gv('vtH')/100||.85,
+                labels:{stable:gv('vlS'),watch:gv('vlW'),elevated:gv('vlE'),high_var:gv('vlH')}},
+      drift:{slight_sigma:+gv('dtSl')||1,strong_sigma:+gv('dtSt')||3,slope_sigma:+gv('dtSlop')||1,
+             slight_trend_score:+gv('dtSlT')||.2,strong_trend_score:+gv('dtStT')||.5,
+             labels:{stable:gv('dlS'),slight_drift:gv('dlSD'),strong_drift:gv('dlStD'),slight_trend:gv('dlSlT'),strong_trend:gv('dlStT')}},
+      oscillation:{mild_ratio:+gv('otM')/100||.40,osc_ratio:+gv('otO')/100||.70,
+                   labels:{stable:gv('olS'),mild:gv('olM'),oscillating:gv('olO')}},
+    },
+    trigger:{cooldown_seconds:+gv('trCool')||300,check_interval_seconds:+gv('trIntv')||300,
+             day_end_hour:+gv('trHour')||6,day_end_minute:+gv('trMin')||0,
+             window_n:+gv('trWinN')||1,skip_additive:document.getElementById('trSkip').checked},
+    prescription_watchdog:{
+      enabled:             document.getElementById('pwEnable').checked,
+      monitored_params:    [...document.querySelectorAll('.pw-param:checked')].map(c=>c.value),
+      tolerance_pct:       parseFloat(gv('pwTol'))       || 1.0,
+      watch_thr:           parseFloat(gv('pwWatchThr'))  || 1.0,
+      alert_thr:           parseFloat(gv('pwAlertThr'))  || 3.0,
+      critical_thr:        parseFloat(gv('pwCriticalThr'))|| 6.0,
+      setpoint_monitoring: document.getElementById('pwSetpointEnable').checked,
+      setpoint_tolerance:  parseFloat(gv('pwSetpointTol')) || 0.5,
+      trend_window:        parseInt(gv('pwTrendWindow')) || 5,
+      trend_min_batches:   parseInt(gv('pwTrendMin'))    || 3,
+      poll_interval_sec:   parseInt(gv('pwPoll'))        || 30,
+      idle_timeout_min:    (v=>Number.isFinite(v)?v:60)(parseInt(gv('pwIdle'))),
+      skip_zero_batches:   document.getElementById('pwSkipZero').checked,
+    },
+    component_change_watchdog:{
+      enabled:          document.getElementById('ccwEnable').checked,
+      use_scada:        document.getElementById('ccwUseScada').checked,
+      poll_interval_sec:parseInt(gv('ccwPoll'))||30,
+      idle_timeout_min: parseInt(gv('ccwIdle'))||0,
+    },
+    bad_batch_watchdog:{
+      enabled:           document.getElementById('bbwEnable').checked,
+      detection_mode:    gv('bbwDetectionMode') || 'absolute',
+      threshold:         parseFloat(gv('bbwThreshold'))  ||2.0,
+      watch_thr:         parseFloat(gv('bbwWatchThr'))   ||1.0,
+      alert_thr:         parseFloat(gv('bbwAlertThr'))   ||2.0,
+      critical_thr:      parseFloat(gv('bbwCriticalThr'))||3.0,
+      pct_ok_thr:        (parseFloat(gv('bbwPctOkThr'))   ||2)  / 100,
+      pct_warn_thr:      (parseFloat(gv('bbwPctWarnThr')) ||5)  / 100,
+      pct_critical_thr:  (parseFloat(gv('bbwPctCritThr')) ||10) / 100,
+      smc_col:           gv('bbwSmcCol')||'compactability_smc_pct',
+      cosp_col:          gv('bbwCospCol')||'cosp_percentage_pct',
+      poll_interval_sec: parseInt(gv('bbwPoll'))||30,
+      idle_timeout_min:  parseInt(gv('bbwIdle'))||0,
+    },
+    smc_batch_watchdog:{
+      enabled:              document.getElementById('smcEnable').checked,
+      sigma_alerts_enabled: document.getElementById('smcSigmaEnable').checked,
+      sigma_threshold:      parseFloat(gv('smcSigmaThr'))  || 3.0,
+      sigma_window_days:    parseInt(gv('smcSigmaDays'))   || 30,
+      poll_interval_sec:    parseInt(gv('smcPoll'))        || 30,
+      cooldown_sec:         parseInt(gv('smcCooldown'))    || 300,
+    },
+    sieve_watchdog:{
+      enabled:            document.getElementById('swEnable').checked,
+      ok_thr:             parseFloat(gv('swOkThr'))    || 1.0,
+      warn_thr:           parseFloat(gv('swWarnThr'))  || 3.0,
+      critical_thr:       parseFloat(gv('swThreshold'))|| 5.0,
+      pct_change_warning: parseFloat(gv('swThreshold'))|| 5.0,  // legacy compat
+      band_thresholds:    Object.fromEntries(
+        [...document.querySelectorAll('#swBandThrWrap > div')].map(row => [
+          row.querySelector('.sw-band-name').value.trim(),
+          parseFloat(row.querySelector('.sw-band-thr').value),
+        ]).filter(([k, v]) => k && !isNaN(v))
+      ),
+      poll_interval_sec:  parseInt(gv('swPoll'))||60,
+      idle_timeout_min:   parseInt(gv('swIdle'))||0,
+      email_enabled:      document.getElementById('swEmailEnable')?.checked || false,
+    },
+    prediction_monitor: {
+      enabled:           document.getElementById('pmEnable').checked,
+      grace_minutes:     parseInt(gv('pmGrace'))  || 30,
+      poll_interval_sec: parseInt(gv('pmPoll'))   || 300,
+    },
+    data_flow: collectDfSources(),
+    cost_saving: collectCostSaving(),
+    webhook: {
+      enabled:          document.getElementById('webhookEnable')?.checked || false,
+      base_url:         document.getElementById('webhookBaseUrl')?.value?.trim() || '',
+      foundry_key:      document.getElementById('webhookFoundryKey')?.value?.trim() || '',
+      send_si:          document.getElementById('webhookSendSI')?.checked !== false,
+      send_bad_batch:   document.getElementById('webhookSendBadBatch')?.checked || false,
+      send_smc_batch:   document.getElementById('webhookSendSmcBatch')?.checked || false,
+      send_prescription:document.getElementById('webhookSendPrescription')?.checked || false,
+      send_sieve:       document.getElementById('webhookSendSieve')?.checked || false,
+      send_prediction:  document.getElementById('webhookSendPrediction')?.checked || false,
+      min_severity:     document.getElementById('webhookMinSeverity')?.value || 'warning',
+      shift_names: (()=>{
+        const m = {};
+        const s1 = (document.getElementById('shiftName1')?.value||'').trim();
+        const s2 = (document.getElementById('shiftName2')?.value||'').trim();
+        const s3 = (document.getElementById('shiftName3')?.value||'').trim();
+        if(s1) m['1'] = s1;
+        if(s2) m['2'] = s2;
+        if(s3) m['3'] = s3;
+        return m;
+      })(),
+    },
+    notifications: {
+      email: {
+        enabled:        document.getElementById('emailEnable')?.checked || false,
+        smtp_host:      gv('emailSmtpHost')  || 'smtp.gmail.com',
+        smtp_port:      parseInt(gv('emailSmtpPort')) || 587,
+        use_tls:        gv('emailEncryption') === 'tls',
+        use_ssl:        gv('emailEncryption') === 'ssl',
+        username:       gv('emailUsername')  || '',
+        password:       gv('emailPassword')  || '',
+        from_address:   gv('emailFrom')      || '',
+        reply_to:       gv('emailReplyTo')   || '',
+        dashboard_url:  gv('emailDashUrl')   || 'http://localhost:5055',
+        dashboard_user: gv('emailDashUser')  || '',
+        recipients:     collectEmailRecipients(),
+      }
+    },
+    additive_delay_seconds: parseInt(gv('addDelaySec')) || 0,
+    param_chart_limits: (()=>{
+      const out = {};
+      document.querySelectorAll('[id^="lcl_"]').forEach(el=>{
+        const col = el.id.slice(4);
+        const lo = el.value.trim(); const loN = lo===''?null:parseFloat(lo);
+        const hiEl = document.getElementById('ucl_'+col);
+        const hi = hiEl ? hiEl.value.trim() : ''; const hiN = hi===''?null:parseFloat(hi);
+        if(loN!==null || hiN!==null) out[col]={min:loN, max:hiN};
+      });
+      return out;
+    })(),
+  };
+  try {
+    const r=await fetch(`/api/config/foundry-config?db=${enc(curDB)}&line_id=${curLine}`,
+      {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const d=await r.json();
+    if(d.ok) setMsg(d.saved?`✓  Saved — ${d.label}`:`✓  Applied — ${d.label}`,true);
+    else throw new Error(d.error||'Unknown error');
+  } catch(e) { setMsg('✗  '+e.message,false); }
+  finally { setBtns(false); }
+}
+
+/* ── Fill Notifications tab ── */
+function fillNotifications(cfg) {
+  const em = (cfg.notifications || {}).email || {};
+  // Webhook config
+  const wh = cfg.webhook || {};
+  const el2 = id => document.getElementById(id);
+  if(el2('webhookEnable'))         { el2('webhookEnable').checked = !!wh.enabled; el2('webhookEnableLbl').textContent = wh.enabled?'On':'Off'; }
+  if(el2('webhookBaseUrl'))          el2('webhookBaseUrl').value   = wh.base_url || '';
+  if(el2('webhookFoundryKey'))       el2('webhookFoundryKey').value= wh.foundry_key || '';
+  if(el2('webhookSendSI'))           el2('webhookSendSI').checked          = wh.send_si !== false;
+  if(el2('webhookSendBadBatch'))     el2('webhookSendBadBatch').checked     = !!wh.send_bad_batch;
+  if(el2('webhookSendSmcBatch'))    el2('webhookSendSmcBatch').checked     = !!wh.send_smc_batch;
+  if(el2('webhookSendPrescription')) el2('webhookSendPrescription').checked = !!wh.send_prescription;
+  if(el2('webhookSendSieve'))        el2('webhookSendSieve').checked        = !!wh.send_sieve;
+  if(el2('webhookSendPrediction'))   el2('webhookSendPrediction').checked   = !!wh.send_prediction;
+  if(el2('webhookMinSeverity'))      el2('webhookMinSeverity').value        = wh.min_severity || 'warning';
+  const sn = wh.shift_names || {};
+  if(el2('shiftName1')) el2('shiftName1').value = sn['1'] || '';
+  if(el2('shiftName2')) el2('shiftName2').value = sn['2'] || '';
+  if(el2('shiftName3')) el2('shiftName3').value = sn['3'] || '';
+  const el = id => document.getElementById(id);
+  if(el('emailEnable'))       el('emailEnable').checked       = !!em.enabled;
+  if(el('emailEnableLbl'))    el('emailEnableLbl').textContent = em.enabled ? 'On' : 'Off';
+  if(em.smtp_host !== undefined) sv('emailSmtpHost', em.smtp_host);
+  if(em.smtp_port !== undefined) sv('emailSmtpPort', em.smtp_port);
+  const encMode = em.use_ssl ? 'ssl' : em.use_tls === false ? 'none' : 'tls';
+  sdd('emailEncryption', encMode);
+  if(em.username)       sv('emailUsername',  em.username);
+  if(em.password)       sv('emailPassword',  em.password);
+  if(em.from_address)   sv('emailFrom',      em.from_address);
+  if(em.reply_to !== undefined) sv('emailReplyTo', em.reply_to);
+  if(em.dashboard_url)  sv('emailDashUrl',   em.dashboard_url);
+  if(em.dashboard_user !== undefined) sv('emailDashUser', em.dashboard_user || '');
+
+  // Load recipients — new [{email,types}] or legacy [addr] with alert_types fallback
+  if(em.recipients && em.recipients.length) {
+    emailLoadRecipients(em.recipients);
+  } else {
+    // Migrate legacy: to_addresses + alert_types → new format
+    const legacyAddrs = Array.isArray(em.to_addresses)
+      ? em.to_addresses
+      : (em.to_addresses||'').split(',').map(s=>s.trim()).filter(Boolean);
+    const legacyTypes = Array.isArray(em.alert_types) && em.alert_types.length
+      ? em.alert_types
+      : _EMAIL_TYPES.map(t => t.key);
+    emailLoadRecipients(legacyAddrs.map(addr => ({ email: addr, types: legacyTypes })));
+  }
+
+
+}
+
+
+/* ── Test email ── */
+async function testEmail() {
+  const btn = document.getElementById('testEmailBtn');
+  const msg = document.getElementById('testEmailMsg');
+  btn.disabled = true;
+  msg.textContent = 'Sending…';
+  msg.style.color = 'var(--muted)';
+  try {
+    const payload = {
+      db: curDB, line_id: curLine,
+      smtp_host:    gv('emailSmtpHost'),
+      smtp_port:    parseInt(gv('emailSmtpPort'))||587,
+      use_tls:      gv('emailEncryption') === 'tls',
+      use_ssl:      gv('emailEncryption') === 'ssl',
+      username:     gv('emailUsername'),
+      password:     gv('emailPassword'),
+      from_address: gv('emailFrom'),
+      to_addresses: [...document.querySelectorAll('#emailRecipientList input[type=email]')]
+                      .map(i=>i.value.trim()).filter(Boolean),
+      reply_to:      gv('emailReplyTo'),
+      dashboard_url: gv('emailDashUrl'),
+      dashboard_user: gv('emailDashUser') || '',
+    };
+    const r = await fetch('/api/config/test-email', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const d = await r.json();
+    if (d.ok) { msg.textContent = '✓ Test email sent'; msg.style.color = 'var(--accent)'; }
+    else       { msg.textContent = '✗ ' + (d.error||'Failed'); msg.style.color = 'var(--red)'; }
+  } catch(e) {
+    msg.textContent = '✗ ' + e.message;
+    msg.style.color = 'var(--red)';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+init();
+
+/* ── Per-parameter engine config storage ── */
+let paramEngineConfigs = {};   // { colName: {si_weights, alert_thresholds, alert_labels, engines} }
+let pemCol = null;             // column currently being edited in modal
+
+/* ── Modal band-sync helpers (suffix _p = "per-param") ── */
+function wSumP(){
+  const v=+gv('wV_p')||0,d=+gv('wD_p')||0,o=+gv('wO_p')||0,t=v+d+o;
+  const el=document.getElementById('wSum_p');
+  if(!el)return;
+  el.textContent=t+'%';
+  el.className=Math.abs(t-100)<0.5?'wt-sum-ok':'wt-sum-err';
+}
+function siBandsP(){
+  const s=+gv('thrS_p')||20,w=+gv('thrW_p')||49,a=+gv('thrA_p')||69;
+  setText('siM2_p',(s+1)); setText('siM3_p',(w+1)); setText('siM4_p',(a+1));
+}
+function varBandsP(){
+  const w=+gv('vtW_p')||35,e=+gv('vtE_p')||60;
+  setText('vM2_p',(w+1)); setText('vM3_p',(e+1)); setText('vM4_p',(+gv('vtH_p')||85)+1);
+}
+function oscBandsP(){
+  const m=+gv('otM_p')||40;
+  setText('oM2_p',(m+1)); setText('oM3_p',(+gv('otO_p')||70)+1);
+}
+function syncStrongTrendMinP(){
+  const sl=+gv('dtSlT_p')||0.2,st=+gv('dtStT_p')||0.5;
+  setText('slt-max_p',st.toFixed(2)); setText('stt-min_p',st.toFixed(2)); // fix: slt-max = strong min, not slight min
+}
+
+/* ── Read global engine values (from the Engine Config tab) as defaults ── */
+function _globalEngCfg(){
+  const wv=+gv('wV')||35,wd=+gv('wD')||45,wo=+gv('wO')||20,wT=(wv+wd+wo)||100;
+  return {
+    si_weights:      {variance:+(wv/wT).toFixed(4),drift:+(wd/wT).toFixed(4),oscillation:+(wo/wT).toFixed(4)},
+    alert_thresholds:{stable_max:+gv('thrS')||20,watch_max:+gv('thrW')||49,alert_max:+gv('thrA')||69},
+    alert_labels:    {stable:gv('lblS')||'STABLE',watch:gv('lblW')||'WATCH',alert:gv('lblA')||'ALERT',critical:gv('lblC')||'CRITICAL'},
+    engines:{
+      variance:{score_watch_max:+gv('vtW')/100||.35,score_elevated_max:+gv('vtE')/100||.60,score_high_var_min:+gv('vtH')/100||.85,
+                labels:{stable:gv('vlS'),watch:gv('vlW'),elevated:gv('vlE'),high_var:gv('vlH')}},
+      drift:{slight_sigma:+gv('dtSl')||1,strong_sigma:+gv('dtSt')||3,slope_sigma:+gv('dtSlop')||1,
+             slight_trend_score:+gv('dtSlT')||.2,strong_trend_score:+gv('dtStT')||.5,
+             labels:{stable:gv('dlS'),slight_drift:gv('dlSD'),strong_drift:gv('dlStD'),slight_trend:gv('dlSlT'),strong_trend:gv('dlStT')}},
+      oscillation:{mild_ratio:+gv('otM')/100||.40,osc_ratio:+gv('otO')/100||.70,
+                   labels:{stable:gv('olS'),mild:gv('olM'),oscillating:gv('olO')}},
+    },
+  };
+}
+
+/* ── Populate modal fields from a config object ── */
+function _fillModalFromCfg(cfg){
+  const w=cfg.si_weights||{};
+  sv('wV_p',Math.round((w.variance??0.35)*100));
+  sv('wD_p',Math.round((w.drift??0.45)*100));
+  sv('wO_p',Math.round((w.oscillation??0.20)*100));
+  wSumP();
+  const t=cfg.alert_thresholds||{};
+  sv('thrS_p',t.stable_max??20); sv('thrW_p',t.watch_max??49); sv('thrA_p',t.alert_max??69); siBandsP();
+  const l=cfg.alert_labels||{};
+  sv('lblS_p',l.stable||'STABLE'); sv('lblW_p',l.watch||'WATCH'); sv('lblA_p',l.alert||'ALERT'); sv('lblC_p',l.critical||'CRITICAL');
+  const ve=(cfg.engines||{}).variance||{};
+  sv('vtW_p',Math.round((ve.score_watch_max??0.35)*100));
+  sv('vtE_p',Math.round((ve.score_elevated_max??0.60)*100));
+  sv('vtH_p',Math.round((ve.score_high_var_min??0.85)*100)); varBandsP();
+  const vl=ve.labels||{};
+  sv('vlS_p',vl.stable||'STABLE'); sv('vlW_p',vl.watch||'WATCH'); sv('vlE_p',vl.elevated||'ELEVATED'); sv('vlH_p',vl.high_var||'HIGH VAR');
+  const de=(cfg.engines||{}).drift||{};
+  sv('dtSl_p',de.slight_sigma??1.0); sv('dtSt_p',de.strong_sigma??3.0); sv('dtSlop_p',de.slope_sigma??1.0);
+  sv('dtSlT_p',de.slight_trend_score??0.2); sv('dtStT_p',de.strong_trend_score??0.5);
+  const dl=de.labels||{};
+  sv('dlS_p',dl.stable||'STABLE'); sv('dlSD_p',dl.slight_drift||'SLIGHT DRIFT'); sv('dlStD_p',dl.strong_drift||'STRONG DRIFT');
+  sv('dlSlT_p',dl.slight_trend||'SLIGHT TREND'); sv('dlStT_p',dl.strong_trend||'STRONG TREND'); syncStrongTrendMinP();
+  const oe=(cfg.engines||{}).oscillation||{};
+  sv('otM_p',Math.round((oe.mild_ratio??0.40)*100));
+  sv('otO_p',Math.round((oe.osc_ratio??0.70)*100)); oscBandsP();
+  const ol=oe.labels||{};
+  sv('olS_p',ol.stable||'STABLE'); sv('olM_p',ol.mild||'MILD'); sv('olO_p',ol.oscillating||'OSCILLATING');
+}
+
+/* ── Read modal fields into a config object ── */
+function _readModalCfg(){
+  const wv=+gv('wV_p')||35,wd=+gv('wD_p')||45,wo=+gv('wO_p')||20,wT=(wv+wd+wo)||100;
+  return {
+    si_weights:      {variance:+(wv/wT).toFixed(4),drift:+(wd/wT).toFixed(4),oscillation:+(wo/wT).toFixed(4)},
+    alert_thresholds:{stable_max:+gv('thrS_p')||20,watch_max:+gv('thrW_p')||49,alert_max:+gv('thrA_p')||69},
+    alert_labels:    {stable:gv('lblS_p')||'STABLE',watch:gv('lblW_p')||'WATCH',alert:gv('lblA_p')||'ALERT',critical:gv('lblC_p')||'CRITICAL'},
+    engines:{
+      variance:{score_watch_max:+gv('vtW_p')/100||.35,score_elevated_max:+gv('vtE_p')/100||.60,score_high_var_min:+gv('vtH_p')/100||.85,
+                labels:{stable:gv('vlS_p'),watch:gv('vlW_p'),elevated:gv('vlE_p'),high_var:gv('vlH_p')}},
+      drift:{slight_sigma:+gv('dtSl_p')||1,strong_sigma:+gv('dtSt_p')||3,slope_sigma:+gv('dtSlop_p')||1,
+             slight_trend_score:+gv('dtSlT_p')||.2,strong_trend_score:+gv('dtStT_p')||.5,
+             labels:{stable:gv('dlS_p'),slight_drift:gv('dlSD_p'),strong_drift:gv('dlStD_p'),slight_trend:gv('dlSlT_p'),strong_trend:gv('dlStT_p')}},
+      oscillation:{mild_ratio:+gv('otM_p')/100||.40,osc_ratio:+gv('otO_p')/100||.70,
+                   labels:{stable:gv('olS_p'),mild:gv('olM_p'),oscillating:gv('olO_p')}},
+    },
+  };
+}
+
+function openParamEngine(col){
+  pemCol = col;
+  const title = document.getElementById('pemTitle');
+  if(title) title.textContent = uiN(col) + ' — Engine Configuration';
+  const cfg = paramEngineConfigs[col] ? paramEngineConfigs[col] : _globalEngCfg();
+  _fillModalFromCfg(cfg);
+  document.getElementById('paramEngModal').style.display='flex';
+}
+function closeParamEngineModal(){
+  document.getElementById('paramEngModal').style.display='none';
+  pemCol=null;
+}
+function saveParamEngine(){
+  if(!pemCol) return;
+  paramEngineConfigs[pemCol] = _readModalCfg();
+  const btn = document.getElementById('pecb_'+pemCol);
+  if(btn) btn.classList.add('has-custom');
+  closeParamEngineModal();
+}
+function resetParamEngine(){
+  if(!pemCol) return;
+  delete paramEngineConfigs[pemCol];
+  const btn = document.getElementById('pecb_'+pemCol);
+  if(btn) btn.classList.remove('has-custom');
+  _fillModalFromCfg(_globalEngCfg());
+}
+</script>
+
+
+<div id="paramEngModal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeParamEngineModal()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="mh-title" id="pemTitle">Parameter Engine Configuration</span>
+      <span class="mh-sub">Overrides global engine settings for this parameter only. Orange ⚙ = custom config active.</span>
+      <button class="modal-close" onclick="closeParamEngineModal()" title="Close">×</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Weights + Overall SI bands -->
+      <div class="grid2">
+        <div class="sec">
+          <div class="sec-title">Engine Weights</div>
+          <div class="sec-hint">Weights must sum to 100%.</div>
+          <div class="t-wrap"><table class="t">
+            <thead><tr><th class="col-setting">Engine</th><th>Weight (%)</th></tr></thead>
+            <tbody>
+              <tr><td class="col-setting">Variance</td>
+                  <td><input type="number" id="wV_p" min="0" max="100" value="35" onchange="wSumP()"/></td></tr>
+              <tr><td class="col-setting">Drift</td>
+                  <td><input type="number" id="wD_p" min="0" max="100" value="45" onchange="wSumP()"/></td></tr>
+              <tr><td class="col-setting">Oscillation</td>
+                  <td><input type="number" id="wO_p" min="0" max="100" value="20" onchange="wSumP()"/></td></tr>
+              <tr><td class="col-setting" style="font-weight:700;">Total</td>
+                  <td><span id="wSum_p" class="wt-sum-ok">100%</span></td></tr>
+            </tbody>
+          </table></div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-title">Overall SI Alert Bands</div>
+          <div class="sec-hint">Min is auto-derived (previous Max + 1).</div>
+          <div class="t-wrap"><table class="t">
+            <thead><tr><th class="col-band">Band</th><th class="col-label">Label</th><th class="col-minmax">Min</th><th class="col-minmax">Max</th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="col-band">Band 1</td>
+                <td><input type="text" id="lblS_p" value="STABLE" maxlength="20"/></td>
+                <td class="auto-cell">0</td>
+                <td><input type="number" id="thrS_p" min="1" max="98" value="20" onchange="siBandsP()"/></td>
+              </tr>
+              <tr>
+                <td class="col-band">Band 2</td>
+                <td><input type="text" id="lblW_p" value="WATCH" maxlength="20"/></td>
+                <td class="auto-cell" id="siM2_p">21</td>
+                <td><input type="number" id="thrW_p" min="2" max="99" value="49" onchange="siBandsP()"/></td>
+              </tr>
+              <tr>
+                <td class="col-band">Band 3</td>
+                <td><input type="text" id="lblA_p" value="ALERT" maxlength="20"/></td>
+                <td class="auto-cell" id="siM3_p">50</td>
+                <td><input type="number" id="thrA_p" min="3" max="100" value="69" onchange="siBandsP()"/></td>
+              </tr>
+              <tr>
+                <td class="col-band">Band 4</td>
+                <td><input type="text" id="lblC_p" value="CRITICAL" maxlength="20"/></td>
+                <td class="auto-cell" id="siM4_p">70</td>
+                <td class="auto-cell">100</td>
+              </tr>
+            </tbody>
+          </table></div>
+        </div>
+      </div>
+
+
+    </div><!-- /modal-body -->
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="resetParamEngine()" title="Remove custom config — revert to global settings">Reset to Global</button>
+      <div style="flex:1;"></div>
+      <button class="btn-save" onclick="saveParamEngine()">Apply</button>
+      <button class="btn-cancel" onclick="closeParamEngineModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

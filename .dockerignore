@@ -1,0 +1,39 @@
+.git
+.gitignore
+__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.egg-info
+.env
+.venv
+venv
+env
+
+# Logs generated at runtime (mounted as volume)
+logs/
+
+# Generated output files
+*.xlsx
+*.pptx
+*.docx
+*.pdf
+
+# Local dev / test scripts
+simulate_alerts.py
+generate_*.py
+*.log
+
+# IDE and OS
+.vscode
+.idea
+*.DS_Store
+Thumbs.db
+
+# Archive and support files
+_archive/
+deploy/
+
+# Test / mock scripts
+watchdog/run_*_mock.py

@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Contact Us — MPM Infosoft</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f5f0e8;
+  --white:#ffffff;
+  --ink:#111111;
+  --sage:#2d7a4f;
+  --sage-bg:#d4f0e0;
+  --yellow:#ffe14d;
+  --muted:#333333;
+  --subtle:#666666;
+  --border:2px solid #111111;
+  --shadow:4px 4px 0 #111111;
+  --shadow-lg:6px 6px 0 #111111;
+  --shadow-xl:8px 8px 0 #111111;
+}
+*{box-sizing:border-box;margin:0;padding:0;border-radius:0 !important;}
+body{background:var(--bg);color:var(--ink);font-family:'Plus Jakarta Sans','Segoe UI',system-ui,sans-serif;font-size:14px;min-height:100vh;-webkit-font-smoothing:antialiased;}
+a{color:var(--sage);text-decoration:none;}
+a:hover{text-decoration:underline;}
+
+/* ── Header ── */
+.site-header{display:flex;align-items:center;justify-content:space-between;padding:0 40px;height:62px;background:var(--white);border-bottom:var(--border);position:sticky;top:0;z-index:100;box-shadow:0 4px 0 #111;}
+.hdr-brand{display:flex;align-items:center;gap:12px;}
+.hdr-logo{width:36px;height:36px;background:var(--sage);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900;color:#fff;border:var(--border);box-shadow:var(--shadow);}
+.hdr-brand-text h1{font-size:15px;font-weight:800;color:var(--ink);letter-spacing:-.2px;}
+.hdr-brand-text h1 span{color:var(--sage);}
+.hdr-brand-text p{font-size:10px;color:var(--subtle);letter-spacing:.3px;font-family:'JetBrains Mono',monospace;}
+.back-btn{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--ink);border:var(--border);padding:7px 18px;text-decoration:none;background:var(--white);box-shadow:var(--shadow);transition:transform .12s,box-shadow .12s;}
+.back-btn:hover{transform:translate(-2px,-2px);box-shadow:var(--shadow-lg);text-decoration:none;}
+.back-btn:active{transform:translate(4px,4px);box-shadow:none;}
+
+/* ── Page ── */
+.page{max-width:880px;margin:40px auto;padding:0 24px 80px;}
+
+/* ── Hero ── */
+.page-hero{background:var(--white);border:var(--border);box-shadow:var(--shadow-xl);padding:36px 48px;margin-bottom:24px;border-left:6px solid var(--sage);}
+.hero-tag{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;color:var(--ink);background:var(--yellow);border:1px solid #d4b800;padding:3px 10px;display:inline-block;margin-bottom:14px;box-shadow:2px 2px 0 #d4b800;}
+.hero-title{font-size:30px;font-weight:800;color:var(--ink);margin-bottom:10px;letter-spacing:-.5px;line-height:1.15;}
+.hero-sub{font-size:13px;color:var(--muted);line-height:1.75;max-width:66ch;}
+
+/* ── Offices grid ── */
+.offices-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px;}
+.office-card{background:var(--white);border:var(--border);box-shadow:var(--shadow-lg);overflow:hidden;transition:transform .12s,box-shadow .12s;}
+.office-card:hover{transform:translate(-2px,-2px);box-shadow:var(--shadow-xl);}
+.office-hdr{background:var(--yellow);border-bottom:var(--border);padding:14px 22px;display:flex;align-items:center;gap:10px;}
+.office-city{font-size:14px;font-weight:800;color:var(--ink);}
+.office-tag{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:var(--ink);background:var(--white);border:1px solid #111;padding:2px 8px;box-shadow:2px 2px 0 #111;}
+.office-body{padding:20px 22px;}
+.office-name{font-size:12px;font-weight:800;color:var(--ink);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em;}
+.office-addr{font-size:12px;color:var(--muted);line-height:1.8;margin-bottom:16px;font-family:'JetBrains Mono',monospace;font-size:11px;}
+.office-contacts{display:flex;flex-direction:column;gap:7px;}
+.contact-row{display:flex;align-items:baseline;gap:8px;font-size:12px;}
+.contact-label{font-weight:800;color:var(--ink);min-width:42px;flex-shrink:0;font-size:11px;text-transform:uppercase;letter-spacing:.04em;}
+.contact-val{color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:11px;}
+
+/* ── Reach card ── */
+.reach-card{background:var(--sage-bg);border:var(--border);box-shadow:var(--shadow-xl);padding:28px 32px;text-align:center;transition:transform .12s,box-shadow .12s;}
+.reach-card:hover{transform:translate(-2px,-2px);box-shadow:8px 8px 0 #111;}
+.reach-title{font-size:16px;font-weight:800;color:var(--ink);margin-bottom:8px;}
+.reach-sub{font-size:13px;color:var(--muted);line-height:1.65;max-width:480px;margin:0 auto 20px;}
+.reach-email{display:inline-flex;align-items:center;gap:8px;background:var(--sage);color:#fff;border:var(--border);padding:11px 26px;font-size:13px;font-weight:800;text-decoration:none;box-shadow:var(--shadow-lg);transition:transform .12s,box-shadow .12s;}
+.reach-email:hover{transform:translate(-2px,-2px);box-shadow:var(--shadow-xl);text-decoration:none;}
+.reach-email:active{transform:translate(4px,4px);box-shadow:none;}
+
+/* ── Footer ── */
+.site-footer{background:var(--white);border-top:var(--border);box-shadow:0 -4px 0 #111;padding:16px 40px;display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;}
+.footer-brand{display:flex;align-items:center;gap:10px;}
+.footer-logo-sm{width:28px;height:28px;background:var(--sage);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;color:#fff;border:2px solid #111;box-shadow:var(--shadow);}
+.footer-copy{font-size:10px;color:var(--subtle);line-height:1.55;font-family:'JetBrains Mono',monospace;}
+.footer-nav{display:flex;align-items:center;gap:5px;background:var(--bg);border:var(--border);box-shadow:var(--shadow);padding:5px;}
+.footer-link{font-size:11px;font-weight:700;color:var(--muted);text-decoration:none;padding:5px 13px;transition:background .1s,box-shadow .1s;white-space:nowrap;}
+.footer-link:hover{background:var(--bg);color:var(--ink);box-shadow:2px 2px 0 #111;}
+.footer-link.active{background:var(--sage);color:#fff;box-shadow:var(--shadow);}
+@media(max-width:600px){.offices-grid{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<header class="site-header">
+  <div class="hdr-brand">
+    <div class="hdr-logo">S</div>
+    <div class="hdr-brand-text">
+      <h1>SandMan® AI <span>Watchdog</span></h1>
+      <p>Process Stability &amp; Alert Monitoring</p>
+    </div>
+  </div>
+  <a class="back-btn" href="/">← Back to Dashboard</a>
+</header>
+
+<div class="page">
+  <div class="page-hero">
+    <span class="hero-tag">Reach Us</span>
+    <div class="hero-title">Contact Us</div>
+    <p class="hero-sub">We are here to help you tackle your green sand casting defects. Our customer support and technical teams will be happy to reach out to you and answer your questions and resolve your issues.</p>
+  </div>
+
+  <div class="offices-grid">
+    <div class="office-card">
+      <div class="office-hdr">
+        <div class="office-city">Chennai</div>
+        <span class="office-tag">R&amp;D Centre</span>
+      </div>
+      <div class="office-body">
+        <div class="office-name">MPM Infosoft Private Limited</div>
+        <div class="office-addr">A6/3, Phase II, 6th Floor,<br>IIT Madras Research Park,<br>Kanagam Road, Taramani,<br>Chennai – 600113, India.</div>
+        <div class="office-contacts">
+          <div class="contact-row"><span class="contact-label">Phone</span><span class="contact-val">044 4959 7202</span></div>
+          <div class="contact-row"><span class="contact-label">Email</span><span class="contact-val"><a href="mailto:info@sandman.co.in">info@sandman.co.in</a></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="office-card">
+      <div class="office-hdr">
+        <div class="office-city">Nagpur</div>
+        <span class="office-tag">Head Office</span>
+      </div>
+      <div class="office-body">
+        <div class="office-name">MPM Infosoft Private Limited</div>
+        <div class="office-addr">M-22 M.I.D.C.,<br>Hingna Industrial Estate,<br>Nagpur – 440016,<br>Maharashtra, India.</div>
+        <div class="office-contacts">
+          <div class="contact-row"><span class="contact-label">Phone</span><span class="contact-val">+91 7104 23401, 237065</span></div>
+          <div class="contact-row"><span class="contact-label">Fax</span><span class="contact-val">+91 (7104) 237223</span></div>
+          <div class="contact-row"><span class="contact-label">Email</span><span class="contact-val"><a href="mailto:info@sandman.co.in">info@sandman.co.in</a></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="reach-card">
+    <div class="reach-title">Send Us a Message</div>
+    <p class="reach-sub">Have a specific question about SandMan® or need technical support? Drop us an email and our team will get back to you promptly.</p>
+    <a class="reach-email" href="mailto:info@sandman.co.in">✉ info@sandman.co.in</a>
+  </div>
+</div>
+
+<footer class="site-footer">
+  <div class="footer-brand">
+    <div class="footer-logo-sm">S</div>
+    <div class="footer-copy">&copy;2026 MPM Infosoft Pvt. Ltd.<br>SandMan® AI Watchdog</div>
+  </div>
+  <nav class="footer-nav">
+    <a class="footer-link" href="/about">About</a>
+    <a class="footer-link" href="/privacy">Privacy Policy</a>
+    <a class="footer-link" href="/terms">Terms of Service</a>
+    <a class="footer-link active" href="/contact">Contact</a>
+  </nav>
+</footer>
+</body>
+</html>
