@@ -78,7 +78,7 @@ def _verify_sandman_password(username: str, raw_password: str) -> bool:
     try:
         with _reg_engine.connect() as conn:
             row = conn.execute(text(
-                "SELECT user_name, password FROM users WHERE user_name = :un LIMIT 1"
+                "SELECT user_name, password FROM users WHERE LOWER(user_name) = LOWER(:un) LIMIT 1"
             ), {"un": username}).mappings().first()
         if not row:
             return False
@@ -418,8 +418,8 @@ def get_user_foundry():
                 SELECT u.customer_pkey, c.name AS customer_name, c.db_properties
                 FROM   users     u
                 JOIN   customers c ON c.pkey = u.customer_pkey
-                WHERE  u.user_name = :un
-                  AND  c.deleted   = 0
+                WHERE  LOWER(u.user_name) = LOWER(:un)
+                  AND  c.deleted = 0
                 LIMIT 1
             """), {"un": user_name}).mappings().first()
 
