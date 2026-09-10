@@ -507,19 +507,22 @@ class BadBatchMonitor:
                       AND  `{cosp_col}` IS NOT NULL
                 """), {"fl": fl_id, "dt": date_str, "sh": shift}).mappings().first()
 
-                # Bad batches recorded in watchdog_alerts for this shift
-                bad_row = conn.execute(_text("""
-                    SELECT COUNT(*) AS bad
+                # All bad batch records for this shift (for detail table in email)
+                bad_rows = conn.execute(_text("""
+                    SELECT component_id, group_name, batch_time,
+                           smc_value, cosp_value, smc_cosp_diff, overall_status
                     FROM   `watchdog_alerts`
                     WHERE  foundry_line_id = :fl
                       AND  alert_type      = 'BAD_BATCH'
                       AND  `date`          = :dt
                       AND  `shift`         = :sh
-                """), {"fl": fl_id, "dt": date_str, "sh": shift}).mappings().first()
+                    ORDER  BY batch_time ASC
+                """), {"fl": fl_id, "dt": date_str, "sh": shift}).mappings().all()
 
-            total = int(total_row["total"]) if total_row else 0
-            bad   = int(bad_row["bad"])     if bad_row   else 0
-            pct   = round(bad / total * 100, 1) if total > 0 else 0.0
+            total   = int(total_row["total"]) if total_row else 0
+            batches = [dict(r) for r in bad_rows]
+            bad     = len(batches)
+            pct     = round(bad / total * 100, 1) if total > 0 else 0.0
 
         except Exception as exc:
             logger.warning("[%s]  _send_shift_summary query failed: %s", self._label, exc)
@@ -534,6 +537,7 @@ class BadBatchMonitor:
                 total     = total,
                 bad       = bad,
                 pct       = pct,
+                batches   = batches,
                 label     = self._label,
             )
         except Exception as exc:
@@ -565,18 +569,21 @@ class BadBatchMonitor:
                     ORDER BY `shift`
                 """), {"fl": fl_id, "dt": date_str}).mappings().all()
 
-                # Bad batches per shift from watchdog_alerts
-                bad_rows = conn.execute(_text("""
-                    SELECT `shift`, COUNT(*) AS bad
+                # All individual bad batch records for the day (for detail table)
+                detail_rows = conn.execute(_text("""
+                    SELECT `shift`, component_id, group_name, batch_time,
+                           smc_value, cosp_value, smc_cosp_diff, overall_status
                     FROM   `watchdog_alerts`
                     WHERE  foundry_line_id = :fl
                       AND  alert_type      = 'BAD_BATCH'
                       AND  `date`          = :dt
-                    GROUP BY `shift`
-                    ORDER BY `shift`
+                    ORDER  BY `shift`, batch_time ASC
                 """), {"fl": fl_id, "dt": date_str}).mappings().all()
 
-            bad_by_shift   = {r["shift"]: int(r["bad"])   for r in bad_rows}
+            batches        = [dict(r) for r in detail_rows]
+            bad_by_shift   = {}
+            for r in batches:
+                bad_by_shift[r["shift"]] = bad_by_shift.get(r["shift"], 0) + 1
             total_by_shift = {r["shift"]: int(r["total"]) for r in total_rows}
             shifts         = sorted(set(list(bad_by_shift.keys()) + list(total_by_shift.keys())))
 
@@ -601,6 +608,7 @@ class BadBatchMonitor:
                 config   = self._config,
                 date_str = date_str,
                 rows     = rows,
+                batches  = batches,
                 label    = self._label,
             )
         except Exception as exc:

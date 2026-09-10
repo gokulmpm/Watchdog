@@ -649,8 +649,67 @@ def send_bad_batch_email(result: dict, config: dict, label: str = "") -> bool:
         logger.warning("[%s]  Bad-batch email FAILED:\n%s", label, traceback.format_exc())
         return False
 
+def _build_batch_detail_html(batches: list) -> str:
+    """Build an HTML detail table of individual bad batch records for summary emails."""
+    if not batches:
+        return ""
+
+    rows_html = ""
+    for i, b in enumerate(batches):
+        bg        = "#ffffff" if i % 2 == 0 else "#f9f9f9"
+        sev       = str(b.get("overall_status", "")).lower()
+        sev_color = _C["red"] if sev == "critical" else (_C["orange"] if sev == "warning" else _C["muted"])
+        sev_label = sev.upper() if sev else "-"
+        bt        = str(b.get("batch_time") or "-")
+        smc       = b.get("smc_value")
+        cosp      = b.get("cosp_value")
+        diff      = b.get("smc_cosp_diff")
+        smc_str   = f"{float(smc):.2f}"  if smc  is not None else "-"
+        cosp_str  = f"{float(cosp):.2f}" if cosp is not None else "-"
+        diff_str  = f"{float(diff):.2f}" if diff is not None else "-"
+        shift_col = str(b.get("shift") or "")
+        comp      = str(b.get("component_id") or b.get("group_name") or "-")
+        rows_html += f"""
+        <tr style="background:{bg};border-bottom:1px solid #eee">
+          {"<td style='padding:8px 12px;font-size:12px;color:" + _C['subtle'] + ";font-weight:600'>" + shift_col + "</td>" if shift_col else ""}
+          <td style="padding:8px 12px;font-size:12px;color:{_C['muted']}">{comp}</td>
+          <td style="padding:8px 12px;font-size:12px;color:{_C['subtle']}">{bt}</td>
+          <td style="padding:8px 12px;font-size:12px;text-align:right;color:{_C['subtle']}">{smc_str}</td>
+          <td style="padding:8px 12px;font-size:12px;text-align:right;color:{_C['subtle']}">{cosp_str}</td>
+          <td style="padding:8px 12px;font-size:12px;text-align:right;color:{_C['subtle']}">{diff_str}</td>
+          <td style="padding:8px 12px;font-size:12px;text-align:center;font-weight:700;color:{sev_color}">{sev_label}</td>
+        </tr>"""
+
+    has_shift_col = any(b.get("shift") for b in batches)
+    shift_th = '<th style="padding:9px 12px;font-size:11px;color:#fff;text-align:left;font-weight:600">SHIFT</th>' if has_shift_col else ""
+
+    return f"""
+  <div style="padding:0 24px 16px">
+    <div style="font-size:12px;font-weight:700;color:{_C['ink']};margin-bottom:8px;letter-spacing:0.5px">
+      ALL BAD BATCHES ({len(batches)})
+    </div>
+    <table width="100%" cellpadding="0" cellspacing="0"
+           style="border-collapse:collapse;border:1px solid #e0e0e0;border-radius:4px;overflow:hidden;font-family:Arial,sans-serif">
+      <thead>
+        <tr style="background:{_C['ink']}">
+          {shift_th}
+          <th style="padding:9px 12px;font-size:11px;color:#fff;text-align:left;font-weight:600">COMPONENT</th>
+          <th style="padding:9px 12px;font-size:11px;color:#fff;text-align:left;font-weight:600">BATCH TIME</th>
+          <th style="padding:9px 12px;font-size:11px;color:#fff;text-align:right;font-weight:600">SMC</th>
+          <th style="padding:9px 12px;font-size:11px;color:#fff;text-align:right;font-weight:600">COSP</th>
+          <th style="padding:9px 12px;font-size:11px;color:#fff;text-align:right;font-weight:600">DIFF</th>
+          <th style="padding:9px 12px;font-size:11px;color:#fff;text-align:center;font-weight:600">SEVERITY</th>
+        </tr>
+      </thead>
+      <tbody>{rows_html}
+      </tbody>
+    </table>
+  </div>"""
+
+
 def send_bad_batch_shift_summary(config: dict, date_str: str, shift: str,
                                   total: int, bad: int, pct: float,
+                                  batches: list = None,
                                   label: str = "") -> bool:
     """Send end-of-shift bad batch summary email."""
     email_cfg = _force_enabled_if_recipients(_get_email_cfg(config), "BAD_BATCH")
@@ -732,6 +791,8 @@ def send_bad_batch_shift_summary(config: dict, date_str: str, shift: str,
     </div>
   </div>
 
+{_build_batch_detail_html(batches)}
+
   <div style="background:#f5f5f5;border-top:1px solid #e0e0e0;padding:12px 24px;
               font-size:11px;color:{_C['subtle']};text-align:center">
     @Sandman Team
@@ -750,11 +811,13 @@ def send_bad_batch_shift_summary(config: dict, date_str: str, shift: str,
         return False
 
 def send_bad_batch_daily_summary(config: dict, date_str: str,
-                                  rows: list, label: str = "") -> bool:
+                                  rows: list, batches: list = None,
+                                  label: str = "") -> bool:
     """
     Send end-of-day bad batch summary email showing all shifts for the date.
 
     rows: [{"shift": "A", "total": 100, "bad": 5, "pct": 5.0}, ...]
+    batches: individual bad batch records from watchdog_alerts
     """
     email_cfg = _force_enabled_if_recipients(_get_email_cfg(config), "BAD_BATCH")
     if not _is_enabled(email_cfg, "BAD_BATCH"):
@@ -773,7 +836,7 @@ def send_bad_batch_daily_summary(config: dict, date_str: str,
         grand_bad   = sum(r["bad"]   for r in rows)
         grand_pct   = round(grand_bad / grand_total * 100, 1) if grand_total > 0 else 0.0
         bb_cfg      = config.get("bad_batch_watchdog", {})
-        ok_thr      = float(bb_cfg.get("pct_ok_thr", 1.0)) * 100
+        ok_thr      = float(bb_cfg.get("pct_ok_thr", 1.0))
         status      = "OK" if grand_pct <= ok_thr else "BAD BATCH"
 
         status_color = _C["sage"] if status == "OK" else _C["red"]
@@ -853,6 +916,8 @@ def send_bad_batch_daily_summary(config: dict, date_str: str,
       Status : {status}
     </div>
   </div>
+
+{_build_batch_detail_html(batches)}
 
   <!-- Footer -->
   <div style="background:#f5f5f5;border-top:1px solid #e0e0e0;padding:12px 24px;
