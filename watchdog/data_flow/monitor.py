@@ -56,11 +56,12 @@ def _register_snooze(foundry_line_id: int, hours: float = 1.0) -> None:
 
 
 # ── Timing constants ──────────────────────────────────────────────────────────
-POLL_INTERVAL_SECONDS       = 60      # main monitoring check
-REDISCOVER_INTERVAL_HOURS   = 168     # re-scan for new sources (weekly)
-RELEARN_INTERVAL_HOURS      = 720     # re-learn rhythm (monthly)
-MIN_RECORDS_TO_LEARN        = 20      # skip learning if too few records
-CONFIRMATION_RESEND_HOURS   = 2       # don't spam confirmation emails
+# Fallback defaults — overridden at runtime by data_flow config in watchdog_si_config
+POLL_INTERVAL_SECONDS       = 60
+REDISCOVER_INTERVAL_HOURS   = 168
+RELEARN_INTERVAL_HOURS      = 720
+MIN_RECORDS_TO_LEARN        = 20
+CONFIRMATION_RESEND_HOURS   = 2
 
 
 class DataFlowMonitor:
@@ -112,17 +113,19 @@ class DataFlowMonitor:
         # Step 2: Main poll loop
         while True:
             try:
-                # Run maintenance tasks on schedule
+                # Re-read poll interval every cycle — picks up live DB config changes
+                df_cfg    = self._config.get("data_flow", {})
+                poll_sec  = int(df_cfg.get("poll_interval_sec", POLL_INTERVAL_SECONDS))
+
                 self._maybe_rediscover()
                 self._maybe_relearn()
-
-                # Core monitoring check
                 self._poll_all_lines()
 
             except Exception:
                 logger.error("[%s] poll error:\n%s", self._label, traceback.format_exc())
+                poll_sec = POLL_INTERVAL_SECONDS
 
-            time.sleep(self._poll_interval)
+            time.sleep(poll_sec)
 
     # ── Bootstrap (runs once on startup) ─────────────────────────────────────
 
@@ -164,11 +167,13 @@ class DataFlowMonitor:
     # ── Scheduled maintenance ─────────────────────────────────────────────────
 
     def _maybe_rediscover(self) -> None:
-        """Re-discover sources weekly — picks up new foundry lines or new tables."""
+        """Re-discover sources — interval configurable via data_flow.rediscover_interval_hours."""
         if self._last_discovery is None:
             return
+        interval = float(self._config.get("data_flow", {}).get(
+            "rediscover_interval_hours", REDISCOVER_INTERVAL_HOURS))
         age = (datetime.now() - self._last_discovery).total_seconds() / 3600
-        if age < REDISCOVER_INTERVAL_HOURS:
+        if age < interval:
             return
         logger.info("[%s] weekly re-discovery running ...", self._label)
         for line_id in self._get_all_foundry_lines():
@@ -176,11 +181,13 @@ class DataFlowMonitor:
         self._last_discovery = datetime.now()
 
     def _maybe_relearn(self) -> None:
-        """Re-learn rhythms monthly — adapts to foundry process changes."""
+        """Re-learn rhythms — interval configurable via data_flow.relearn_interval_hours."""
         if self._last_relearn is None:
             return
+        interval = float(self._config.get("data_flow", {}).get(
+            "relearn_interval_hours", RELEARN_INTERVAL_HOURS))
         age = (datetime.now() - self._last_relearn).total_seconds() / 3600
-        if age < RELEARN_INTERVAL_HOURS:
+        if age < interval:
             return
         logger.info("[%s] monthly rhythm re-learning running ...", self._label)
         self._learn_missing_rhythms(force=True)
@@ -258,7 +265,7 @@ class DataFlowMonitor:
                 )
                 if rhythm:
                     # Cache thresholds for fast access during monitoring
-                    self._rhythm_cache[(line_id, src)] = compute_thresholds(rhythm)
+                    self._rhythm_cache[(line_id, src)] = compute_thresholds(rhythm, self._config)
                     logger.info(
                         "[%s][line=%d][%s] rhythm learned — p99=%.0fs (%.1f min)",
                         self._label, line_id, src,
@@ -276,7 +283,7 @@ class DataFlowMonitor:
         key = (line_id, src)
         if key not in self._rhythm_cache:
             rhythm = load_rhythm(self._registry_engine, line_id, src)
-            self._rhythm_cache[key] = compute_thresholds(rhythm) if rhythm else None
+            self._rhythm_cache[key] = compute_thresholds(rhythm, self._config) if rhythm else None
         return self._rhythm_cache.get(key)
 
     # ── Main poll ─────────────────────────────────────────────────────────────
@@ -575,9 +582,6 @@ class DataFlowMonitor:
 
     # ── Alert firing ─────────────────────────────────────────────────────────
 
-    # Track last alert time per (line, source) to avoid flooding
-    ALERT_RESEND_HOURS = 1   # don't repeat same source alert for 1 hour
-
     def _fire_source_alert(
         self,
         foundry_line_id: int,
@@ -588,13 +592,29 @@ class DataFlowMonitor:
         """
         Fire an alert when a specific source goes MISSING.
         1. Write to watchdog_alerts (visible on dashboard)
-        2. Send email notification
-        Rate-limited to ALERT_RESEND_HOURS per source.
+        2. Send email notification (respects send_data_flow + min_severity from DB config)
+        Rate-limited to data_flow.alert_resend_hours (default 1h) per source.
         """
+        df_cfg = self._config.get("data_flow", {})
+        resend_hours = float(df_cfg.get("alert_resend_hours", 1))
+
         key = (foundry_line_id, source_name)
         last = self._last_alert_fired.get(key)
-        if last and (datetime.now() - last).total_seconds() < self.ALERT_RESEND_HOURS * 3600:
-            return  # already alerted recently — skip
+        if last and (datetime.now() - last).total_seconds() < resend_hours * 3600:
+            return
+
+        # Respect send_data_flow toggle and min_severity from DB config
+        if not df_cfg.get("send_data_flow", True):
+            logger.debug("[%s][line=%d][%s] send_data_flow=false — alert suppressed",
+                         self._label, foundry_line_id, source_name)
+            return
+        min_sev = str(df_cfg.get("min_severity", "warning")).lower()
+        # data_flow alerts are always "critical" severity — only suppress if min_severity is above critical
+        _order = {"warning": 0, "critical": 1}
+        if _order.get("critical", 1) < _order.get(min_sev, 0):
+            logger.debug("[%s][line=%d][%s] severity=critical below min_severity=%s — suppressed",
+                         self._label, foundry_line_id, source_name, min_sev)
+            return
 
         gap_min  = int(gap_seconds // 60)
         last_str = last_seen.strftime("%H:%M on %d-%b-%Y") if last_seen else "not available"
@@ -740,10 +760,12 @@ class DataFlowMonitor:
         Send ONE confirmation email when all sources go silent.
         Rate-limited: won't resend for CONFIRMATION_RESEND_HOURS.
         """
+        df_cfg = self._config.get("data_flow", {})
+        confirm_hours = float(df_cfg.get("confirmation_resend_hours", CONFIRMATION_RESEND_HOURS))
         last_sent = self._confirmation_sent.get(foundry_line_id)
         if last_sent:
             age_hours = (datetime.now() - last_sent).total_seconds() / 3600
-            if age_hours < CONFIRMATION_RESEND_HOURS:
+            if age_hours < confirm_hours:
                 return
 
         logger.warning(

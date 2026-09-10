@@ -130,19 +130,26 @@ def learn_rhythm(
 
 # ── Alert thresholds from rhythm ──────────────────────────────────────────────
 
-def compute_thresholds(rhythm: dict) -> dict:
+def compute_thresholds(rhythm: dict, config: dict = None) -> dict:
     """
     Derive alert thresholds from learned rhythm.
 
-    DELAYED  = gap > p99                (slightly late)
-    STALE    = gap > p99 × 5            (significantly late)
-    MISSING  = gap > p99 × 20           (alert threshold)
+    DELAYED  = gap > p99 × stale_mult  (default 1×)
+    STALE    = gap > p99 × stale_mult  (default 5×)
+    MISSING  = gap > p99 × missing_mult (default 20×)
+
+    Multipliers are configurable via data_flow.delayed_mult / stale_mult / missing_mult
+    in watchdog_si_config so they can be tuned per foundry without restarting.
     """
+    df_cfg       = (config or {}).get("data_flow", {})
+    delayed_mult = float(df_cfg.get("delayed_mult",  1))
+    stale_mult   = float(df_cfg.get("stale_mult",    5))
+    missing_mult = float(df_cfg.get("missing_mult", 20))
     p99 = rhythm["gap_p99_seconds"]
     return {
-        "delayed_seconds" : p99,
-        "stale_seconds"   : p99 * 5,
-        "missing_seconds" : p99 * 20,
+        "delayed_seconds" : p99 * delayed_mult,
+        "stale_seconds"   : p99 * stale_mult,
+        "missing_seconds" : p99 * missing_mult,
     }
 
 
