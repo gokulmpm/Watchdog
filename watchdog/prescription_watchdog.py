@@ -112,14 +112,16 @@ class PrescriptionWatchdog:
                     time.sleep(poll_sec)
                     continue
 
-                tolerance_pct = float(pw_cfg["tolerance_pct"])
-                watch_thr     = float(pw_cfg["watch_thr"])
-                critical_thr  = float(pw_cfg["critical_thr"])
+                tolerance_pct    = float(pw_cfg["tolerance_pct"])
+                watch_thr        = float(pw_cfg["watch_thr"])
+                critical_thr     = float(pw_cfg["critical_thr"])
+                param_thresholds = dict(pw_cfg.get("param_thresholds") or {})
 
                 new_rows = self._poll_new_batches(tolerance_pct, skip_zero,
                                                   watch_thr, critical_thr,
                                                   setpoint_monitor, setpoint_tolerance,
-                                                  trend_window, trend_min)
+                                                  trend_window, trend_min,
+                                                  param_thresholds=param_thresholds)
 
                 if new_rows > 0:
                     last_new_batch_time = datetime.now()
@@ -151,7 +153,8 @@ class PrescriptionWatchdog:
                           setpoint_monitor: bool = True,
                           setpoint_tolerance: float = 0.5,
                           trend_window: int = 5,
-                          trend_min: int = 3) -> int:
+                          trend_min: int = 3,
+                          param_thresholds: dict = None) -> int:
         """Fetch batches newer than last_batch_pkey for the current component only."""
         from .pipeline.data_fetcher import fetch_prescription_data, fetch_prescription_data_scada
         from .pipeline.db_connector import get_engine
@@ -246,6 +249,7 @@ class PrescriptionWatchdog:
                 setpoint_monitoring=setpoint_monitor,
                 setpoint_tolerance=setpoint_tolerance,
                 trend_window=trend_window,
+                param_thresholds=param_thresholds,
                 trend_min_batches=trend_min,
                 trend_history=self._trend_history,
             )
@@ -583,7 +587,8 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
                             setpoint_tolerance: float = 0.5,
                             trend_window: int = 5,
                             trend_min_batches: int = 3,
-                            trend_history: dict = None) -> list[dict]:
+                            trend_history: dict = None,
+                            param_thresholds: dict = None) -> list[dict]:
     """
     Build per-parameter deviation dicts with two comparison types:
 
@@ -599,10 +604,17 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
     prediction = prediction or {}
     if trend_history is None:
         trend_history = {}
+    param_thresholds = param_thresholds or {}
     deviations = []
 
     for param in monitored:
         label = _PARAM_LABELS.get(param, param)
+
+        # Per-param thresholds — fall back to global values if not configured
+        _pthr      = param_thresholds.get(param, {})
+        _ok_thr    = float(_pthr.get("ok_thr",   tolerance_pct))
+        _warn_thr  = float(_pthr.get("warn_thr",  watch_thr))
+        _crit_thr  = float(_pthr.get("crit_thr",  critical_thr))
 
         actual_col = _PARAM_TO_ACTUAL_COL.get(param)
         actual_raw = row.get(actual_col) if (actual_col and actual_col in row.index) \
@@ -673,7 +685,7 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
             diff_pred     = round(actual - pred, 3)
             pct_pred      = round((actual - pred) / pred * 100, 2) if pred else 0.0
             abs_pct_pred  = abs(pct_pred)
-            sev_pred      = _deviation_severity(abs_pct_pred, tolerance_pct, watch_thr, critical_thr)
+            sev_pred      = _deviation_severity(abs_pct_pred, _ok_thr, _warn_thr, _crit_thr)
             within_pred   = sev_pred == "ok"
 
             # Trend tracking: update history (cap total entries to prevent memory growth)
@@ -687,7 +699,7 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
             hist.append(pct_pred)
             if len(hist) > trend_window:
                 hist.pop(0)
-            trend_msg = _compute_trend(hist, min_batches=trend_min_batches, ok_thr=tolerance_pct)
+            trend_msg = _compute_trend(hist, min_batches=trend_min_batches, ok_thr=_ok_thr)
 
             if sev_pred != "ok":
                 direction = "over-dosed" if pct_pred > 0 else "under-dosed"
@@ -703,6 +715,9 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
                     "within"       : within_pred,
                     "severity"     : sev_pred,
                     "trend"        : trend_msg,
+                    "ok_thr"       : _ok_thr,
+                    "warn_thr"     : _warn_thr,
+                    "crit_thr"     : _crit_thr,
                     "message"      : (
                         f"Operator is not following Sandman "
                         f"({direction} by {abs_pct_pred:.1f}%). "
@@ -716,7 +731,7 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
             diff_sp    = round(actual - setpoint, 3)
             pct_sp     = round((actual - setpoint) / setpoint * 100, 2) if setpoint else 0.0
             abs_pct_sp = abs(pct_sp)
-            sev_sp     = _deviation_severity(abs_pct_sp, tolerance_pct, watch_thr, critical_thr)
+            sev_sp     = _deviation_severity(abs_pct_sp, _ok_thr, _warn_thr, _crit_thr)
 
             if sev_sp != "ok":
                 direction_sp = "above" if pct_sp > 0 else "below"
@@ -732,6 +747,9 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
                     "within"       : sev_sp == "ok",
                     "severity"     : sev_sp,
                     "trend"        : "",
+                    "ok_thr"       : _ok_thr,
+                    "warn_thr"     : _warn_thr,
+                    "crit_thr"     : _crit_thr,
                     "message"      : (
                         f"Actual {label} ({actual:.2f}) is {abs_pct_sp:.1f}% "
                         f"{direction_sp} the machine setpoint ({setpoint:.2f}). "
@@ -764,6 +782,9 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
                     "within"       : False,
                     "severity"     : "critical",
                     "trend"        : "",
+                    "ok_thr"       : _ok_thr,
+                    "warn_thr"     : _warn_thr,
+                    "crit_thr"     : _crit_thr,
                     "message"      : (
                         f"Machine setpoint for {label} ({setpoint:.2f}) is {abs_diff:.2f} units "
                         f"{direction_c} the prescribed value ({pred:.2f}), exceeding the allowed "

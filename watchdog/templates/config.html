@@ -2490,12 +2490,39 @@ function renderPrescriptionParams(availParams, monitored) {
       <span>Parameter</span>
       <span>Column</span>
     </div>`;
+  const pthr = (cfg.prescription_watchdog || {}).param_thresholds || {};
+  const globalOk   = (cfg.prescription_watchdog || {}).tolerance_pct ?? 1.0;
+  const globalWarn = (cfg.prescription_watchdog || {}).watch_thr      ?? 3.0;
+  const globalCrit = (cfg.prescription_watchdog || {}).critical_thr   ?? 6.0;
   for (const p of availParams) {
-    const chk = monitored.has(p.key) ? 'checked' : '';
-    h += `<div class="prow">
-      <input type="checkbox" class="pw-param" value="${p.key}" id="pw_${p.key}" ${chk} onchange="pwSyncAll()"/>
-      <label class="prow-name" for="pw_${p.key}">${p.label}</label>
-      <span class="prow-col">${p.column}</span>
+    const chk  = monitored.has(p.key) ? 'checked' : '';
+    const pt   = pthr[p.key] || {};
+    const okV  = pt.ok_thr   ?? globalOk;
+    const wV   = pt.warn_thr ?? globalWarn;
+    const cV   = pt.crit_thr ?? globalCrit;
+    h += `<div class="prow" style="flex-wrap:wrap;gap:4px 0">
+      <div style="display:flex;align-items:center;gap:8px;width:100%">
+        <input type="checkbox" class="pw-param" value="${p.key}" id="pw_${p.key}" ${chk} onchange="pwSyncAll()"/>
+        <label class="prow-name" for="pw_${p.key}" style="flex:1">${p.label}</label>
+        <span class="prow-col">${p.column}</span>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;padding-left:28px;font-size:11px;color:#666;flex-wrap:wrap">
+        <span style="color:#2d7a4f;font-weight:600">OK ≤</span>
+        <input type="number" class="pw-pthr" data-key="${p.key}" data-thr="ok_thr"
+               min="0.1" max="50" step="0.1" value="${okV}"
+               style="width:52px;padding:2px 4px;font-size:11px;border:1px solid #ccc;border-radius:3px"/>
+        <span>%</span>
+        <span style="color:#c44a08;font-weight:600;margin-left:6px">Warn ≤</span>
+        <input type="number" class="pw-pthr" data-key="${p.key}" data-thr="warn_thr"
+               min="0.1" max="50" step="0.1" value="${wV}"
+               style="width:52px;padding:2px 4px;font-size:11px;border:1px solid #ccc;border-radius:3px"/>
+        <span>%</span>
+        <span style="color:#c01616;font-weight:600;margin-left:6px">Crit ></span>
+        <input type="number" class="pw-pthr" data-key="${p.key}" data-thr="crit_thr"
+               min="0.1" max="50" step="0.1" value="${cV}"
+               style="width:52px;padding:2px 4px;font-size:11px;border:1px solid #ccc;border-radius:3px"/>
+        <span>%</span>
+      </div>
     </div>`;
   }
   h += '</div>';
@@ -2992,21 +3019,29 @@ async function save() {
     trigger:{cooldown_seconds:+gv('trCool')||300,check_interval_seconds:+gv('trIntv')||300,
              day_end_hour:+gv('trHour')||6,day_end_minute:+gv('trMin')||0,
              window_n:+gv('trWinN')||1,skip_additive:document.getElementById('trSkip').checked},
-    prescription_watchdog:{
-      enabled:             document.getElementById('pwEnable').checked,
-      monitored_params:    [...document.querySelectorAll('.pw-param:checked')].map(c=>c.value),
-      tolerance_pct:       parseFloat(gv('pwTol'))       || 1.0,
-      watch_thr:           parseFloat(gv('pwWatchThr'))  || 1.0,
-      alert_thr:           parseFloat(gv('pwAlertThr'))  || 3.0,
-      critical_thr:        parseFloat(gv('pwCriticalThr'))|| 6.0,
-      setpoint_monitoring: document.getElementById('pwSetpointEnable').checked,
-      setpoint_tolerance:  parseFloat(gv('pwSetpointTol')) || 0.5,
-      trend_window:        parseInt(gv('pwTrendWindow')) || 5,
-      trend_min_batches:   parseInt(gv('pwTrendMin'))    || 3,
-      poll_interval_sec:   parseInt(gv('pwPoll'))        || 30,
-      idle_timeout_min:    (v=>Number.isFinite(v)?v:60)(parseInt(gv('pwIdle'))),
-      skip_zero_batches:   document.getElementById('pwSkipZero').checked,
-    },
+    prescription_watchdog:(()=>{
+      const pthr = {};
+      document.querySelectorAll('.pw-pthr').forEach(inp => {
+        const k = inp.dataset.key, t = inp.dataset.thr, v = parseFloat(inp.value);
+        if (k && t && !isNaN(v)) { pthr[k] = pthr[k] || {}; pthr[k][t] = v; }
+      });
+      return {
+        enabled:             document.getElementById('pwEnable').checked,
+        monitored_params:    [...document.querySelectorAll('.pw-param:checked')].map(c=>c.value),
+        tolerance_pct:       parseFloat(gv('pwTol'))       || 1.0,
+        watch_thr:           parseFloat(gv('pwWatchThr'))  || 1.0,
+        alert_thr:           parseFloat(gv('pwAlertThr'))  || 3.0,
+        critical_thr:        parseFloat(gv('pwCriticalThr'))|| 6.0,
+        setpoint_monitoring: document.getElementById('pwSetpointEnable').checked,
+        setpoint_tolerance:  parseFloat(gv('pwSetpointTol')) || 0.5,
+        trend_window:        parseInt(gv('pwTrendWindow')) || 5,
+        trend_min_batches:   parseInt(gv('pwTrendMin'))    || 3,
+        poll_interval_sec:   parseInt(gv('pwPoll'))        || 30,
+        idle_timeout_min:    (v=>Number.isFinite(v)?v:60)(parseInt(gv('pwIdle'))),
+        skip_zero_batches:   document.getElementById('pwSkipZero').checked,
+        param_thresholds:    pthr,
+      };
+    })(),
     component_change_watchdog:{
       enabled:          document.getElementById('ccwEnable').checked,
       use_scada:        document.getElementById('ccwUseScada').checked,

@@ -1025,9 +1025,104 @@ def send_sieve_email(result: dict, config: dict, label: str = "") -> bool:
         logger.warning("[%s]  Sieve email FAILED:\n%s", label, traceback.format_exc())
         return False
 
+def _presc_section_html(title: str, action: str, devs: list, ref_key: str) -> str:
+    """Build one HTML section (table) for a group of prescription deviations."""
+    if not devs:
+        return ""
+
+    rows_html = ""
+    for i, d in enumerate(devs):
+        bg        = "#ffffff" if i % 2 == 0 else "#f9f9f9"
+        sev       = str(d.get("severity", "")).lower()
+        sev_color = _C["red"] if sev == "critical" else (_C["orange"] if sev == "warning" else _C["sage"])
+        sev_label = sev.upper() if sev else "-"
+
+        lbl    = d.get("label") or d.get("param", "-")
+        actual = d.get("actual")
+        pres   = d.get("prescribed")
+        sp     = d.get("setpoint")
+        pct    = d.get("pct_diff")
+        trend  = str(d.get("trend") or "")
+
+        ok_thr   = d.get("ok_thr")
+        warn_thr = d.get("warn_thr")
+        crit_thr = d.get("crit_thr")
+
+        # Format threshold band text
+        if ok_thr is not None and warn_thr is not None and crit_thr is not None:
+            thr_html = (
+                f'<span style="color:{_C["sage"]};font-weight:700">OK ≤{ok_thr:.1f}%</span>'
+                f' &nbsp;|&nbsp; '
+                f'<span style="color:{_C["orange"]};font-weight:700">Warn {ok_thr:.1f}–{warn_thr:.1f}%</span>'
+                f' &nbsp;|&nbsp; '
+                f'<span style="color:{_C["red"]};font-weight:700">Crit >{warn_thr:.1f}%</span>'
+            )
+        else:
+            thr_html = "-"
+
+        if ref_key == "prescribed":
+            ref_val  = f"{float(pres):.2f} Kg" if pres is not None else "-"
+            act_val  = f"{float(actual):.2f} Kg" if actual is not None else "-"
+            ref_lbl  = "Prescribed"
+        elif ref_key == "setpoint":
+            ref_val  = f"{float(sp):.2f} Kg" if sp is not None else "-"
+            act_val  = f"{float(actual):.2f} Kg" if actual is not None else "-"
+            ref_lbl  = "Setpoint"
+        else:  # setpoint_vs_presc
+            ref_val  = f"{float(pres):.2f} Kg" if pres is not None else "-"
+            act_val  = f"{float(sp):.2f} Kg" if sp is not None else "-"
+            ref_lbl  = "Prescribed"
+
+        pct_str  = f"{float(pct):+.1f}%" if pct is not None else "-"
+        pct_color = _C["red"] if (pct is not None and abs(float(pct)) > (warn_thr or 99)) \
+                    else (_C["orange"] if pct is not None else _C["muted"])
+
+        trend_cell = f'<div style="font-size:10px;color:{_C["subtle"]};margin-top:2px">{trend}</div>' if trend else ""
+
+        rows_html += f"""
+          <tr style="background:{bg};border-bottom:1px solid #eee;vertical-align:top">
+            <td style="padding:10px 14px;font-size:13px;font-weight:700;color:{_C['ink']};min-width:140px">
+              {lbl}{trend_cell}
+            </td>
+            <td style="padding:10px 14px;font-size:12px;color:{_C['subtle']}">{ref_lbl}: {ref_val}</td>
+            <td style="padding:10px 14px;font-size:12px;color:{_C['subtle']}">Actual: {act_val}</td>
+            <td style="padding:10px 14px;font-size:13px;text-align:right;color:{pct_color};font-weight:700">{pct_str}</td>
+            <td style="padding:10px 14px;font-size:11px;color:{_C['subtle']};white-space:nowrap">{thr_html}</td>
+            <td style="padding:10px 14px;text-align:center">
+              <span style="background:{'#ffe0e0' if sev=='critical' else '#fff3e0' if sev=='warning' else '#e8f5e9'};
+                           color:{sev_color};border:1px solid {sev_color};border-radius:3px;
+                           padding:3px 10px;font-size:11px;font-weight:700">{sev_label}</span>
+            </td>
+          </tr>"""
+
+    return f"""
+  <div style="padding:0 24px 16px">
+    <div style="font-size:12px;font-weight:700;color:{_C['ink']};margin-bottom:6px;
+                text-transform:uppercase;letter-spacing:0.5px">{title}</div>
+    <table width="100%" cellpadding="0" cellspacing="0"
+           style="border-collapse:collapse;border:1px solid #e0e0e0;border-radius:4px;overflow:hidden">
+      <thead>
+        <tr style="background:{_C['ink']}">
+          <th style="padding:9px 14px;font-size:11px;color:#fff;text-align:left;font-weight:600">PARAMETER</th>
+          <th style="padding:9px 14px;font-size:11px;color:#fff;text-align:left;font-weight:600">REFERENCE</th>
+          <th style="padding:9px 14px;font-size:11px;color:#fff;text-align:left;font-weight:600">ACTUAL</th>
+          <th style="padding:9px 14px;font-size:11px;color:#fff;text-align:right;font-weight:600">DEV %</th>
+          <th style="padding:9px 14px;font-size:11px;color:#fff;text-align:left;font-weight:600">THRESHOLDS</th>
+          <th style="padding:9px 14px;font-size:11px;color:#fff;text-align:center;font-weight:600">STATUS</th>
+        </tr>
+      </thead>
+      <tbody>{rows_html}
+      </tbody>
+    </table>
+    <div style="font-size:11px;color:{_C['subtle']};margin-top:6px;padding-left:2px">
+      &#9658; {action}
+    </div>
+  </div>"""
+
+
 def send_prescription_email(result: dict, deviations: list, config: dict,
                              label: str = "") -> bool:
-    """Send a plain-text Prescription Deviation alert email."""
+    """Send an HTML Prescription Deviation alert email."""
     email_cfg = _get_email_cfg(config)
     if not _is_enabled(email_cfg, "PRESCRIPTION"):
         return False
@@ -1037,10 +1132,8 @@ def send_prescription_email(result: dict, deviations: list, config: dict,
         group      = str(result.get("group_name")   or "-")
         date_str   = str(result.get("date")         or "-")
         shift      = str(result.get("shift")        or "-")
-        batch_pkey = str(result.get("pkey")         or "-")
 
         _customer = email_cfg.get("dashboard_user", "")
-        # Auto-fetch from foundry_line table; falls back to "" which hides the line.
         _foundry  = _get_foundry_line_name(config)
 
         try:
@@ -1055,92 +1148,74 @@ def send_prescription_email(result: dict, deviations: list, config: dict,
         grp_act_presc = [d for d in out_devs if d.get("comparison") == "actual_vs_predicted"]
         grp_act_sp    = [d for d in out_devs if d.get("comparison") == "actual_vs_setpoint"]
 
-        SEP  = "-" * 60
-        SEP2 = "=" * 60
+        worst_sev     = "critical" if any(d.get("severity") == "critical" for d in out_devs) else "warning"
+        badge_color   = _C["red"] if worst_sev == "critical" else _C["orange"]
+        badge_bg      = "#ffe0e0" if worst_sev == "critical" else "#fff3e0"
 
-        def _plain_section(title, note, action, devs, ref_key):
-            if not devs:
-                return ""
-            lines = ["", SEP, title, SEP, "", note, ""]
-            for d in devs:
-                lbl    = d.get("label") or d.get("param", "")
-                actual = d.get("actual")
-                pres   = d.get("prescribed")
-                sp     = d.get("setpoint")
-                pct    = d.get("pct_diff", 0)
-                trend  = d.get("trend", "")
-                lines.append(f"  {lbl}")
-                lines.append(f"  {'-' * (len(lbl) + 2)}")
-                if ref_key == "prescribed":
-                    abs_dev = (float(actual) - float(pres)) if actual and pres else None
-                    pct_str = f"({float(pct):+.1f}%)" if pct is not None else ""
-                    abs_str = f"{abs_dev:+.2f} Kg  {pct_str}" if abs_dev is not None else pct_str
-                    lines.append(f"  Prescribed  : {float(pres):.2f} Kg" if pres else "  Prescribed  : -")
-                    lines.append(f"  Actual      : {float(actual):.2f} Kg" if actual else "  Actual      : -")
-                    lines.append(f"  Deviation   : {abs_str}")
-                elif ref_key == "setpoint":
-                    abs_dev = (float(actual) - float(sp)) if actual and sp else None
-                    pct_str = f"({float(pct):+.1f}%)" if pct is not None else ""
-                    abs_str = f"{abs_dev:+.2f} Kg  {pct_str}" if abs_dev is not None else pct_str
-                    lines.append(f"  Setpoint    : {float(sp):.2f} Kg" if sp else "  Setpoint    : -")
-                    lines.append(f"  Actual      : {float(actual):.2f} Kg" if actual else "  Actual      : -")
-                    lines.append(f"  Deviation   : {abs_str}")
-                else:  # setpoint_vs_presc
-                    abs_dev = (float(sp) - float(pres)) if sp and pres else None
-                    pct_str = f"({float(pct):+.1f}%)" if pct is not None else ""
-                    abs_str = f"{abs_dev:+.2f} Kg  {pct_str}" if abs_dev is not None else pct_str
-                    lines.append(f"  Prescribed  : {float(pres):.2f} Kg" if pres else "  Prescribed  : -")
-                    lines.append(f"  Setpoint    : {float(sp):.2f} Kg" if sp else "  Setpoint    : -")
-                    lines.append(f"  Deviation   : {abs_str}")
-                if trend:
-                    lines.append(f"  Trend       : {trend}")
-                lines.append("")
-            lines += ["Action Required:", action, ""]
-            return "\n".join(lines)
-
-        header = [
-            SEP2,
-            "Sandmix Prescription Deviation Alert",
-            SEP2,
-            "",
-        ]
+        meta_rows = ""
         if _customer:
-            header.append(f"Customer  : {_customer}")
+            meta_rows += f'<tr><td style="padding-right:16px;color:{_C["subtle"]}">Customer</td><td style="font-weight:600">{_customer}</td></tr>'
         if _foundry:
-            header.append(f"Foundry   : {_foundry}")
-        header += [
-            f"Component : {component}",
-            f"Group     : {group}",
-            f"Date      : {date_fmt}",
-            f"Shift     : {shift}",
-        ]
+            meta_rows += f'<tr><td style="padding-right:16px;color:{_C["subtle"]}">Foundry</td><td style="font-weight:600">{_foundry}</td></tr>'
+        meta_rows += (
+            f'<tr><td style="padding-right:16px;color:{_C["subtle"]}">Component</td><td style="font-weight:600">{component}</td></tr>'
+            f'<tr><td style="padding-right:16px;color:{_C["subtle"]}">Group</td><td style="font-weight:600">{group}</td></tr>'
+            f'<tr><td style="padding-right:16px;color:{_C["subtle"]}">Date</td><td style="font-weight:600">{date_fmt}</td></tr>'
+            f'<tr><td style="padding-right:16px;color:{_C["subtle"]}">Shift</td><td style="font-weight:600">{shift}</td></tr>'
+        )
 
-        sections = []
-        sections.append(_plain_section(
-            "Setpoint Not Updated as per Sandmix Prescription",
-            "The machine setpoint is not as per the Sandmix prescription.",
-            "Please update the setpoint on the mixer control panel before the next batch.",
-            grp_sp_presc, "setpoint_vs_presc",
-        ))
-        sections.append(_plain_section(
-            "Actual Dosage Not as per Sandmix Prescription",
-            "The actual dosage dispensed is not as per the Sandmix prescription.",
-            "Please verify the actual dosage and ensure that the prescribed Sandmix\n"
-            "values are followed during the mixing process.",
-            grp_act_presc, "prescribed",
-        ))
-        sections.append(_plain_section(
-            "Actual Dosage Not as per Machine Setpoint",
-            "The actual dosage dispensed is not as per the machine setpoint.",
-            "Please check the load cell calibration and verify that the dispensing\n"
-            "equipment is functioning correctly.",
-            grp_act_sp, "setpoint",
-        ))
+        sections_html = (
+            _presc_section_html(
+                "Setpoint Not Updated as per Sandmix Prescription",
+                "Update the setpoint on the mixer control panel before the next batch.",
+                grp_sp_presc, "setpoint_vs_presc",
+            )
+            + _presc_section_html(
+                "Actual Dosage Not as per Sandmix Prescription",
+                "Verify the actual dosage and ensure prescribed Sandmix values are followed.",
+                grp_act_presc, "prescribed",
+            )
+            + _presc_section_html(
+                "Actual Dosage Not as per Machine Setpoint",
+                "Check load cell calibration and verify the dispensing equipment is functioning correctly.",
+                grp_act_sp, "setpoint",
+            )
+        )
 
-        footer = ["", SEP, "@Sandman Team", SEP]
-        body = "\n".join(header + [s for s in sections if s] + footer)
+        html = f"""<!DOCTYPE html>
+<html><body style="margin:0;padding:0;background:#f0ede6;font-family:Arial,sans-serif">
+<div style="max-width:700px;margin:32px auto;background:#ffffff;border-radius:6px;
+            border:1px solid #d0ccc4;overflow:hidden">
 
-        _send_plain(email_cfg, f"[SandMan] Prescription Deviation — {component} | Shift {shift}", body, alert_type="PRESCRIPTION")
+  <div style="background:{_C['ink']};padding:18px 24px">
+    <div style="font-size:11px;letter-spacing:2px;color:#aaaaaa;text-transform:uppercase;margin-bottom:4px">SandMan AI Watchdog</div>
+    <div style="font-size:18px;font-weight:700;color:#ffffff">Prescription Deviation Alert</div>
+  </div>
+
+  <div style="padding:16px 24px 12px;border-bottom:1px solid #eeeeee">
+    <table style="font-size:13px;color:{_C['muted']};line-height:1.9;border-collapse:collapse">
+      {meta_rows}
+    </table>
+  </div>
+
+  <div style="padding:12px 24px 4px">
+    <span style="background:{badge_bg};color:{badge_color};border:1px solid {badge_color};
+                 border-radius:3px;padding:4px 14px;font-size:12px;font-weight:700">
+      {worst_sev.upper()} — {len(out_devs)} parameter{"s" if len(out_devs) != 1 else ""} out of tolerance
+    </span>
+  </div>
+
+{sections_html}
+
+  <div style="background:#f5f5f5;border-top:1px solid #e0e0e0;padding:12px 24px;
+              font-size:11px;color:{_C['subtle']};text-align:center">
+    @Sandman Team
+  </div>
+
+</div>
+</body></html>"""
+
+        _send(email_cfg, f"[SandMan] Prescription Deviation — {component} | Shift {shift}", html, alert_type="PRESCRIPTION")
         logger.info("[%s]  Prescription email sent -> %s", label, ", ".join(_recipients(email_cfg)))
         return True
 
