@@ -39,7 +39,6 @@ logger = logging.getLogger(__name__)
 _SAND_LABEL = {0: "Return Sand", 1: "Prepared Sand", 2: "New Sand", 3: "Core Sand"}
 _SAND_SHORT  = {0: "RS",         1: "PS",            2: "NS",       3: "CS"}
 
-
 class SieveChangeMonitor:
     """Poll the sieves table and alert on significant % change in any sieve band."""
 
@@ -49,8 +48,6 @@ class SieveChangeMonitor:
         self._last_sieve_pkey = 0
         # {(sand_type_int, band_type_str): float} — last known value per band
         self._prev_bands: dict = {}
-
-    # -- Public ---------------------------------------------------------------
 
     def start(self) -> None:
         """Run forever -- call from a daemon thread."""
@@ -133,8 +130,6 @@ class SieveChangeMonitor:
                              self._label, traceback.format_exc())
 
             time.sleep(poll_sec)
-
-    # -- Private ---------------------------------------------------------------
 
     def _poll(self, threshold: float, band_thresholds: dict = None,
               ok_thr: float = None, warn_thr: float = None,
@@ -439,9 +434,6 @@ class SieveChangeMonitor:
             # Fall back to seeding from the single latest pkey
             return self._fetch_bands_for_pkey(self._last_sieve_pkey)
 
-
-# -- Module helpers ------------------------------------------------------------
-
 def _fetch_new_sieve_entries(
     config: dict,
     last_pkey: int,
@@ -488,7 +480,6 @@ def _fetch_new_sieve_entries(
     except Exception as exc:
         logger.warning("_fetch_new_sieve_entries failed: %s", exc)
         return pd.DataFrame()
-
 
 # -- One-shot check ------------------------------------------------------------
 

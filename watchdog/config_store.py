@@ -27,8 +27,6 @@ from urllib.parse import quote_plus
 
 logger = logging.getLogger(__name__)
 
-# --- DDL ----------------------------------------------------------------------
-
 _CREATE_SQL = """
 CREATE TABLE IF NOT EXISTS `watchdog_si_config` (
     `id`            INT          NOT NULL AUTO_INCREMENT,
@@ -43,9 +41,6 @@ CREATE TABLE IF NOT EXISTS `watchdog_si_config` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   COMMENT='Per-foundry-line SI watchdog configuration';
 """
-
-
-# --- Engine factory -----------------------------------------------------------
 
 def get_registry_engine(base_config: dict) -> Optional[Engine]:
     """
@@ -76,9 +71,6 @@ def get_registry_engine(base_config: dict) -> Optional[Engine]:
         echo         = False,
     )
 
-
-# --- Table bootstrap ----------------------------------------------------------
-
 def ensure_config_table(engine: Engine) -> None:
     """Create watchdog_si_config if it does not exist."""
     try:
@@ -87,9 +79,6 @@ def ensure_config_table(engine: Engine) -> None:
         logger.info("watchdog_si_config table ready")
     except Exception as exc:
         logger.warning("ensure_config_table failed: %s", exc)
-
-
-# --- Read ---------------------------------------------------------------------
 
 def load_foundry_config(engine: Engine, label: str) -> dict:
     """Return the stored config dict for one foundry label, or {} if not found."""
@@ -107,7 +96,6 @@ def load_foundry_config(engine: Engine, label: str) -> dict:
         # Table may not exist in foundry DB (it lives in sandman_dev) — not an error
         logger.debug("load_foundry_config(%s) failed: %s", label, exc)
         return {}
-
 
 def load_all_configs(engine: Engine, since: datetime | None = None) -> dict:
     """
@@ -143,9 +131,6 @@ def load_all_configs(engine: Engine, since: datetime | None = None) -> dict:
         logger.warning("load_all_configs failed: %s", exc)
         return {}
 
-
-# --- Write --------------------------------------------------------------------
-
 def seed_foundry_configs(engine: Engine, foundry_configs: dict) -> int:
     """
     Seed default configs from the JSON file into the DB for any label that has
@@ -176,7 +161,6 @@ def seed_foundry_configs(engine: Engine, foundry_configs: dict) -> int:
         except Exception as exc:
             logger.warning("seed_foundry_configs(%s) failed: %s", label, exc)
     return inserted
-
 
 def save_foundry_config_db(engine: Engine, label: str, config: dict) -> bool:
     """

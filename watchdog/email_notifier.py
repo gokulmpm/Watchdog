@@ -33,7 +33,6 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# ── Dedicated email audit log ──────────────────────────────────────────────────
 _email_log_path = Path(__file__).parent.parent / "logs" / "email_alerts.log"
 _email_log_path.parent.mkdir(parents=True, exist_ok=True)
 _email_file_handler = logging.FileHandler(_email_log_path, encoding="utf-8")
@@ -46,10 +45,8 @@ if not _email_logger.handlers:
     _email_logger.addHandler(_email_file_handler)
 _email_logger.propagate = False
 
-# ── Singleton engine for _dashboard_url_for_label DB lookup ──────────────────
 _DASH_ENGINE = None
 
-# ── Colour palette (matches Neubrutalism dashboard theme) ─────────────────────
 def _dashboard_url_for_label(email_cfg: dict, label: str) -> str:
     """
     Build the dashboard URL with the correct ?user= parameter.
@@ -113,7 +110,6 @@ def _dashboard_url_for_label(email_cfg: dict, label: str) -> str:
 
     return base
 
-
 _C = {
     "ink"    : "#111111",
     "bg"     : "#f5f0e8",
@@ -132,10 +128,7 @@ _C = {
 
 _DASHBOARD_URL_DEFAULT = "http://localhost:5055"
 
-
-# ══════════════════════════════════════════════════════════════════════════════
 #  PUBLIC API
-# ══════════════════════════════════════════════════════════════════════════════
 
 def send_alerts_batch_email(alerts: list, config: dict, label: str = "") -> bool:
     """
@@ -155,7 +148,6 @@ def send_alerts_batch_email(alerts: list, config: dict, label: str = "") -> bool
         return False
 
     try:
-        # ── Group by type ──────────────────────────────────────────────────────
         from collections import defaultdict
         by_type = defaultdict(list)
         for a in alerts:
@@ -163,7 +155,6 @@ def send_alerts_batch_email(alerts: list, config: dict, label: str = "") -> bool
 
         date_str = str(alerts[0].get("date") or "")
 
-        # ── Build subject ──────────────────────────────────────────────────────
         type_labels = {
             "SI"          : "SI WARNING",
             "BAD_BATCH"   : "BAD BATCH",
@@ -188,7 +179,6 @@ def send_alerts_batch_email(alerts: list, config: dict, label: str = "") -> bool
 
         subject = "Alert from Sandman"
 
-        # ── Build body sections ────────────────────────────────────────────────
         body_sections = ""
 
         # SI section
@@ -326,7 +316,6 @@ def send_alerts_batch_email(alerts: list, config: dict, label: str = "") -> bool
         logger.warning("[%s]  Batch alert email FAILED:\n%s", label, traceback.format_exc())
         return False
 
-
 def send_si_alert_email(result: dict, config: dict, label: str = "") -> bool:
     """
     Send a plain left-aligned SI alert email matching the standard Sandman format.
@@ -444,7 +433,6 @@ def send_si_alert_email(result: dict, config: dict, label: str = "") -> bool:
     except Exception:
         logger.warning("[%s]  SI alert email FAILED:\n%s", label, traceback.format_exc())
         return False
-
 
 def _si_alert_body(date_str, shift, score_str, alert_level,
                    root_cause, recommend, critical_params,
@@ -594,7 +582,6 @@ def _si_alert_body(date_str, shift, score_str, alert_level,
     {rec_section}
     """
 
-
 def send_bad_batch_email(result: dict, config: dict, label: str = "") -> bool:
     """Send a plain-text Bad Batch alert email."""
     email_cfg = _force_enabled_if_recipients(_get_email_cfg(config), "BAD_BATCH")
@@ -662,7 +649,6 @@ def send_bad_batch_email(result: dict, config: dict, label: str = "") -> bool:
         logger.warning("[%s]  Bad-batch email FAILED:\n%s", label, traceback.format_exc())
         return False
 
-
 def send_bad_batch_shift_summary(config: dict, date_str: str, shift: str,
                                   total: int, bad: int, pct: float,
                                   label: str = "") -> bool:
@@ -718,7 +704,6 @@ def send_bad_batch_shift_summary(config: dict, date_str: str, shift: str,
         logger.warning("[%s]  send_bad_batch_shift_summary FAILED:\n%s", label, traceback.format_exc())
         return False
 
-
 def send_bad_batch_daily_summary(config: dict, date_str: str,
                                   rows: list, label: str = "") -> bool:
     """
@@ -749,7 +734,6 @@ def send_bad_batch_daily_summary(config: dict, date_str: str,
         status_color = _C["sage"] if status == "OK" else _C["red"]
         status_bg    = _C["sage_lt"] if status == "OK" else _C["red_lt"]
 
-        # ── Build shift rows ───────────────────────────────────────────────────
         shift_rows_html = ""
         for i, r in enumerate(rows):
             bg  = "#ffffff" if i % 2 == 0 else "#f9f9f9"
@@ -843,7 +827,6 @@ def send_bad_batch_daily_summary(config: dict, date_str: str,
         logger.warning("[%s]  send_bad_batch_daily_summary FAILED:\n%s", label, traceback.format_exc())
         return False
 
-
 def send_sieve_email(result: dict, config: dict, label: str = "") -> bool:
     """Send a plain-text Sieve Change alert email."""
     email_cfg = _get_email_cfg(config)
@@ -931,7 +914,6 @@ def send_sieve_email(result: dict, config: dict, label: str = "") -> bool:
     except Exception:
         logger.warning("[%s]  Sieve email FAILED:\n%s", label, traceback.format_exc())
         return False
-
 
 def send_prescription_email(result: dict, deviations: list, config: dict,
                              label: str = "") -> bool:
@@ -1056,7 +1038,6 @@ def send_prescription_email(result: dict, deviations: list, config: dict,
         logger.warning("[%s]  Prescription email FAILED:\n%s", label, traceback.format_exc())
         return False
 
-
 def _combined_dev_rows(deviations: list) -> str:
     """Build HTML table rows for prescription deviations (avoids nested f-string issues)."""
     rows = []
@@ -1080,7 +1061,6 @@ def _combined_dev_rows(deviations: list) -> str:
             f'</tr>'
         )
     return "".join(rows)
-
 
 def send_smc_batch_email(
     batch_breaches: list,
@@ -1203,7 +1183,6 @@ def send_smc_batch_email(
         logger.warning("[%s]  SMC batch email FAILED:\n%s", label, traceback.format_exc())
         return False
 
-
 def send_combined_alert_email(bb_result: dict, presc_result: dict,
                                deviations: list, config: dict,
                                label: str = "") -> bool:
@@ -1320,7 +1299,6 @@ def send_combined_alert_email(bb_result: dict, presc_result: dict,
         logger.warning("[%s]  Combined alert email FAILED:\n%s", label, traceback.format_exc())
         return False
 
-
 def check_and_send_combined(engine, config: dict, component_id: str,
                              date_str: str, shift: str, foundry_line_id: int,
                              label: str = "") -> bool:
@@ -1407,10 +1385,7 @@ def check_and_send_combined(engine, config: dict, component_id: str,
         logger.warning("[%s]  check_and_send_combined failed:\n%s", label, traceback.format_exc())
         return False
 
-
-# ══════════════════════════════════════════════════════════════════════════════
 #  HTML TEMPLATES
-# ══════════════════════════════════════════════════════════════════════════════
 
 def _bad_batch_body(component, group, date_str, shift, batch_pkey,
                     smc, cosp, diff, threshold, direction,
@@ -1477,7 +1452,6 @@ def _bad_batch_body(component, group, date_str, shift, batch_pkey,
     </div>
     """
 
-
 def _prescription_annotations_html(annotations: list) -> str:
     """Render a compact note block for zero/null batch parameters."""
     if not annotations:
@@ -1503,7 +1477,6 @@ def _prescription_annotations_html(annotations: list) -> str:
         f'<table cellpadding="0" cellspacing="0" style="margin-bottom:16px;'
         f'border-top:1px solid #eee">{rows}</table>'
     )
-
 
 def _prescription_body(component, group, date_str, shift, batch_pkey,
                         deviations, n_out, total, sev_col, sev_bg,
@@ -1656,7 +1629,6 @@ def _prescription_body(component, group, date_str, shift, batch_pkey,
         f'<p style="font-size:13px;color:#888;margin:0">@Sandman Team</p>'
     )
 
-
 def _wrap_email(title: str, badge_txt: str, badge_col: str, badge_bg: str,
                 headline: str, subline: str, body: str, dashboard_url: str) -> str:
     now = datetime.now().strftime("%d %b %Y, %H:%M")
@@ -1731,10 +1703,7 @@ def _wrap_email(title: str, badge_txt: str, badge_col: str, badge_bg: str,
 </body>
 </html>"""
 
-
-# ══════════════════════════════════════════════════════════════════════════════
 #  SMTP SEND
-# ══════════════════════════════════════════════════════════════════════════════
 
 def _send_plain(email_cfg: dict, subject: str, body: str, alert_type: str = "") -> None:
     """Send a plain-text only email (no HTML part)."""
@@ -1784,7 +1753,6 @@ def _send_plain(email_cfg: dict, subject: str, body: str, alert_type: str = "") 
             alert_type, ", ".join(to_addrs), host, port, exc,
         )
         raise
-
 
 def _send(email_cfg: dict, subject: str, html: str, alert_type: str = "") -> None:
     """Build and send the MIME email. Raises on failure (caller handles logging)."""
@@ -1841,7 +1809,6 @@ def _send(email_cfg: dict, subject: str, html: str, alert_type: str = "") -> Non
         )
         raise
 
-
 def _send_raw(email_cfg: dict, msg, to_addrs: list, alert_type: str = "") -> None:
     """Send a pre-built MIMEMultipart message."""
     host     = email_cfg.get("smtp_host", "smtp.gmail.com")
@@ -1870,7 +1837,6 @@ def _send_raw(email_cfg: dict, msg, to_addrs: list, alert_type: str = "") -> Non
                             alert_type, ", ".join(to_addrs), host, port, exc)
         raise
 
-
 def _html_to_plain(subject: str) -> str:
     return (
         f"{subject}\n\n"
@@ -1878,14 +1844,10 @@ def _html_to_plain(subject: str) -> str:
         "Please open the dashboard for full details."
     )
 
-
-# ══════════════════════════════════════════════════════════════════════════════
 #  HELPERS
-# ══════════════════════════════════════════════════════════════════════════════
 
 def _get_email_cfg(config: dict) -> dict:
     return config.get("notifications", {}).get("email", {})
-
 
 def _get_foundry_line_name(config: dict) -> str:
     """
@@ -1909,7 +1871,6 @@ def _get_foundry_line_name(config: dict) -> str:
     except Exception:
         return ""
 
-
 def _force_enabled_if_recipients(email_cfg: dict, alert_type: str) -> dict:
     """If enabled=False but recipients exist for this alert_type, return a copy with enabled=True."""
     if email_cfg.get("enabled", False):
@@ -1921,7 +1882,6 @@ def _force_enabled_if_recipients(email_cfg: dict, alert_type: str) -> dict:
     if typed_recipients:
         return {**email_cfg, "enabled": True}
     return email_cfg
-
 
 def _is_enabled(email_cfg: dict, alert_type: str) -> bool:
     if not email_cfg.get("enabled", False):
@@ -1937,7 +1897,6 @@ def _is_enabled(email_cfg: dict, alert_type: str) -> bool:
         _email_logger.debug("SKIPPED  type=%-16s  reason=type not in alert_types=%s", alert_type, sorted(allowed))
         return False
     return True
-
 
 def _recipients(email_cfg: dict, alert_type: str = "") -> list:
     """
@@ -1970,7 +1929,6 @@ def _recipients(email_cfg: dict, alert_type: str = "") -> list:
             return all_emails
         return typed_emails
 
-    # ── Legacy fallback ────────────────────────────────────────────────────────
     addrs = email_cfg.get("to_addresses", [])
     if isinstance(addrs, str):
         addrs = [a.strip() for a in addrs.split(",") if a.strip()]

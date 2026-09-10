@@ -32,9 +32,6 @@ from .engines.si_engine import si_label_to_int, WARNING as _SI_WARNING
 
 logger = logging.getLogger(__name__)
 
-
-# --- DDL ----------------------------------------------------------------------
-
 _CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS `watchdog_alerts` (
     `id`                BIGINT        AUTO_INCREMENT PRIMARY KEY,
@@ -98,7 +95,6 @@ CREATE TABLE IF NOT EXISTS `watchdog_alerts` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 """
 
-
 def ensure_table(engine: Engine) -> None:
     """Create watchdog_alerts (if new) or migrate it to the current schema."""
     try:
@@ -109,7 +105,6 @@ def ensure_table(engine: Engine) -> None:
     except Exception as exc:
         logger.error("ensure_table failed: %s", exc)
         raise
-
 
 def _migrate_table(engine: Engine) -> None:
     """
@@ -241,9 +236,6 @@ def _migrate_table(engine: Engine) -> None:
             except Exception as exc:
                 logger.warning("  SKIP: %s -- %s", stmt[:80], exc)
 
-
-# --- SI Alert -----------------------------------------------------------------
-
 _SI_UPSERT = text("""
     INSERT INTO `watchdog_alerts` (
         `alert_type`, `foundry_line_id`, `date`, `shift`, `customer_pkey`,
@@ -268,7 +260,6 @@ _SI_UPSERT = text("""
         `params_json`      = VALUES(`params_json`),
         `raw_values_json`  = VALUES(`raw_values_json`)
 """)
-
 
 def write_si_alert(
     engine: Engine,
@@ -405,9 +396,6 @@ def write_si_alert(
         logger.error("write_si_alert failed: %s", exc)
         return 0
 
-
-# --- Prescription Alert -------------------------------------------------------
-
 _PRESC_UPSERT = text("""
     INSERT INTO `watchdog_alerts` (
         `alert_type`, `foundry_line_id`, `date`, `shift`, `batch_pkey`, `customer_pkey`,
@@ -428,7 +416,6 @@ _PRESC_UPSERT = text("""
         `batch_time`      = VALUES(`batch_time`),
         `deviations_json` = VALUES(`deviations_json`)
 """)
-
 
 def write_prescription_alert(
     engine: Engine,
@@ -521,9 +508,6 @@ def write_prescription_alert(
         logger.error("write_prescription_alert failed: %s", exc)
         return 0
 
-
-# --- Component Change Alert ---------------------------------------------------
-
 _COMP_CHANGE_UPSERT = text("""
     INSERT INTO `watchdog_alerts` (
         `alert_type`, `foundry_line_id`, `date`, `shift`, `batch_pkey`, `customer_pkey`,
@@ -546,7 +530,6 @@ _COMP_CHANGE_UPSERT = text("""
         `batch_time`           = VALUES(`batch_time`),
         `component_info_json`  = VALUES(`component_info_json`)
 """)
-
 
 def write_component_change_alert(
     engine: Engine,
@@ -607,9 +590,6 @@ def write_component_change_alert(
         logger.error("write_component_change_alert failed: %s", exc)
         return 0
 
-
-# --- Bad Batch Alert ----------------------------------------------------------
-
 _BAD_BATCH_UPSERT = text("""
     INSERT INTO `watchdog_alerts` (
         `alert_type`, `foundry_line_id`, `date`, `shift`, `batch_pkey`, `customer_pkey`,
@@ -636,7 +616,6 @@ _BAD_BATCH_UPSERT = text("""
         `overall_status` = VALUES(`overall_status`)
 """)
 
-
 def _bb_severity(diff: float, threshold: float) -> str:
     """Map SMC deviation to severity level matching JS display logic."""
     thr = float(threshold or 2.0)
@@ -644,7 +623,6 @@ def _bb_severity(diff: float, threshold: float) -> str:
     if abd > thr * 1.5:  return "CRITICAL"
     if abd > thr:         return "ALERT"
     return "WATCH"
-
 
 def write_bad_batch_alert(
     engine: Engine,
@@ -697,9 +675,6 @@ def write_bad_batch_alert(
         logger.error("write_bad_batch_alert failed: %s", exc)
         return 0
 
-
-# --- Sieve Change Alert -------------------------------------------------------
-
 _SIEVE_CHANGE_UPSERT = text("""
     INSERT INTO `watchdog_alerts` (
         `alert_type`, `foundry_line_id`, `date`, `shift`, `batch_pkey`, `customer_pkey`,
@@ -715,7 +690,6 @@ _SIEVE_CHANGE_UPSERT = text("""
         `root_cause`      = VALUES(`root_cause`),
         `params_json`     = VALUES(`params_json`)
 """)
-
 
 def write_sieve_change_alert(
     engine: Engine,
@@ -785,15 +759,11 @@ def write_sieve_change_alert(
         logger.error("write_sieve_change_alert failed: %s", exc)
         return 0
 
-
-# --- Helpers ------------------------------------------------------------------
-
 def _safe_float(v) -> Optional[float]:
     try:
         return float(v) if v is not None else None
     except (TypeError, ValueError):
         return None
-
 
 def _coerce_date(v):
     if v is None:
@@ -807,7 +777,6 @@ def _coerce_date(v):
         return date.fromisoformat(str(v)[:10])
     except Exception:
         return None
-
 
 def _coerce_datetime_str(v) -> Optional[str]:
     """Return ISO-format datetime string or None."""

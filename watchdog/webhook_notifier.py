@@ -86,10 +86,7 @@ _PS_UNITS: dict = {
     "temp_of_sand_after_mix": "°C",
 }
 
-
-# ══════════════════════════════════════════════════════════════════════════════
 #  PUBLIC API
-# ══════════════════════════════════════════════════════════════════════════════
 
 def send_si_alerts(
     result:        dict,
@@ -233,7 +230,6 @@ def send_si_alerts(
             for k in new_type_keys:
                 _registered_types.add(k)
 
-    # ── Send alert instances one by one (API requires individual POSTs) ───────
     for ap in alert_batch:
         _tk  = ap.pop("_type_key", None)
         _tp  = ap.pop("_type_payload", None)
@@ -244,10 +240,7 @@ def send_si_alerts(
 
     return sent
 
-
-# ══════════════════════════════════════════════════════════════════════════════
 #  MIXER (SMC / prepared_sand_extra) PER-BATCH ALERTS
-# ══════════════════════════════════════════════════════════════════════════════
 
 # Unit lookup for SMC parameters
 _SMC_UNITS: dict = {
@@ -264,7 +257,6 @@ _SMC_UNITS: dict = {
 
 # Track registered SMC alert-types to avoid re-registering each poll
 _registered_smc_types: set = set()
-
 
 def send_smc_batch_webhook(
     batch_breaches: list,
@@ -393,10 +385,7 @@ def send_smc_batch_webhook(
 
     return sent
 
-
-# ══════════════════════════════════════════════════════════════════════════════
 #  LCL / UCL BREACH ALERTS  (prepared sand, window mode only)
-# ══════════════════════════════════════════════════════════════════════════════
 
 def send_lcl_ucl_alerts(
     result:        dict,
@@ -550,10 +539,7 @@ def send_lcl_ucl_alerts(
 
     return sent
 
-
-# ══════════════════════════════════════════════════════════════════════════════
 #  BAD BATCH DAILY SUMMARY WEBHOOK
-# ══════════════════════════════════════════════════════════════════════════════
 
 def send_bad_batch_daily_webhook(
     config:   dict,
@@ -640,14 +626,10 @@ def send_bad_batch_daily_webhook(
         )
         return False
 
-
-# ══════════════════════════════════════════════════════════════════════════════
 #  INTERNAL HELPERS
-# ══════════════════════════════════════════════════════════════════════════════
 
 def _get_cfg(config: dict) -> dict:
     return config.get("webhook", {})
-
 
 def _severity_passes(cfg: dict, severity: str) -> bool:
     """Return True if severity meets the configured minimum threshold."""
@@ -655,12 +637,10 @@ def _severity_passes(cfg: dict, severity: str) -> bool:
     order   = {"warning": 0, "critical": 1}
     return order.get(severity.lower(), 0) >= order.get(min_sev, 0)
 
-
 def _shift_name(cfg: dict, shift) -> str:
     custom  = cfg.get("shift_names", {})
     mapping = {**_DEFAULT_SHIFT_NAMES, **{str(k): v for k, v in custom.items()}}
     return mapping.get(str(shift).strip(), f"Shift {shift}" if shift else "")
-
 
 def _process_for_param(param: str) -> str:
     if param.startswith(("ps_", "pse_")):
@@ -671,13 +651,11 @@ def _process_for_param(param: str) -> str:
         return "Consumption"
     return "Sand"
 
-
 def _bare_name(param: str) -> str:
     for pfx in ("ps_", "pse_", "add_", "con_", "sv_"):
         if param.startswith(pfx):
             return param[len(pfx):]
     return param
-
 
 def _unit_for_param(param: str) -> str:
     lower = param.lower()
@@ -686,7 +664,6 @@ def _unit_for_param(param: str) -> str:
     if param.startswith("add_"):
         return "kg"
     return "%"
-
 
 def _get_limits(bare_name: str, db_limits: dict) -> tuple:
     entry = db_limits.get(bare_name, {})
@@ -697,7 +674,6 @@ def _get_limits(bare_name: str, db_limits: dict) -> tuple:
         round(float(ucl), 4) if ucl is not None else None,
     )
 
-
 def _safe_round(v, ndigits: int = 4) -> Optional[float]:
     try:
         f = float(v)
@@ -705,10 +681,8 @@ def _safe_round(v, ndigits: int = 4) -> Optional[float]:
     except (TypeError, ValueError):
         return None
 
-
 def _triggered_at(result: dict) -> str:
     return datetime.now().isoformat(timespec="seconds")
-
 
 def _post_alert_batch(cfg: dict, batch: list, label: str) -> int:
     """POST each alert individually to /api/sandman/alert with 1s spacing."""
@@ -720,11 +694,9 @@ def _post_alert_batch(cfg: dict, batch: list, label: str) -> int:
                 time.sleep(1)
     return sent
 
-
 def _post_alert_type(cfg: dict, payload: dict, label: str) -> bool:
     """Register a single alert-type (kept for prescription and bad-batch callers)."""
     return _post_alert_type_batch(cfg, [payload], label)
-
 
 def _post_alert_type_batch(cfg: dict, payloads: list, label: str) -> bool:
     """
@@ -755,7 +727,6 @@ def _post_alert_type_batch(cfg: dict, payloads: list, label: str) -> bool:
             )
             all_ok = False
     return all_ok
-
 
 def _post_alert(cfg: dict, payload: dict, label: str,
                 _type_payload: dict = None, _type_key: str = None) -> bool:
@@ -828,9 +799,6 @@ def _post_alert(cfg: dict, payload: dict, label: str,
         )
         return False
 
-
-# ── Breach helpers (used by send_lcl_ucl_alerts) ──────────────────────────────
-
 _BREACH_RECS = {
     ("moisture",               "HIGH"): "Reduce water addition by 3–6 litres per batch. Check sand temperature — high temperature can cause the system to over-dose water to compensate.",
     ("moisture",               "LOW"):  "Increase water addition by 3–5 litres. Check if sand temperature has risen, which would increase evaporation during mixing.",
@@ -863,7 +831,6 @@ _BREACH_REC_FALLBACK = (
     "Review the parameter trend over the last 5–10 shifts with the process engineer. "
     "Cross-check additive dosing records against the target prescription before making any adjustment."
 )
-
 
 def _build_breach_root_cause(
     plabel:    str,
@@ -920,7 +887,6 @@ def _build_breach_root_cause(
             parts.append("Also: " + "; ".join(engine_parts) + ".")
 
     return " ".join(parts)
-
 
 def _build_breach_recommendation(bare: str, direction: str) -> str:
     return _BREACH_RECS.get((bare, direction), _BREACH_REC_FALLBACK)

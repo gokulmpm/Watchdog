@@ -72,14 +72,10 @@ _COL_DISPLAY = {
     "current"             : "Current (A)",
 }
 
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
 def _camel_to_snake(name: str) -> str:
     import re
     s = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
     return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s).lower()
-
 
 def _load_limits(engine, foundry_line_id: int) -> dict:
     """
@@ -118,7 +114,6 @@ def _load_limits(engine, foundry_line_id: int) -> dict:
         logger.warning("SMCBatchMonitor: _load_limits failed: %s", exc)
     return limits
 
-
 def _load_baseline(engine, foundry_line_id: int, cols: list, days: int) -> dict:
     """
     Compute per-column mean and std over the last `days` days.
@@ -153,7 +148,6 @@ def _load_baseline(engine, foundry_line_id: int, cols: list, days: int) -> dict:
     except Exception as exc:
         logger.warning("SMCBatchMonitor: _load_baseline failed: %s", exc)
         return {}
-
 
 def _check_row(row: dict, limits: dict, baseline: dict,
                sigma_enabled: bool, sigma_thr: float) -> list[dict]:
@@ -206,7 +200,6 @@ def _check_row(row: dict, limits: dict, baseline: dict,
             })
     return breaches
 
-
 def _check_shift_avg(avg_row: dict, limits: dict, baseline: dict,
                      sigma_enabled: bool, sigma_thr: float,
                      batch_count: int) -> list[dict]:
@@ -216,9 +209,6 @@ def _check_shift_avg(avg_row: dict, limits: dict, baseline: dict,
         b["batch_count"] = batch_count
         b["is_shift_avg"] = True
     return breaches
-
-
-# ── Main monitor class ────────────────────────────────────────────────────────
 
 class SMCBatchMonitor:
     """
@@ -237,8 +227,6 @@ class SMCBatchMonitor:
         self._shift_acc : dict = {}  # accumulator: {col: [values]} for current shift
         self._shift_key : str  = ""  # "YYYY-MM-DD|S1"
         self._last_email: float = 0  # epoch of last alert email
-
-    # -- Public ---------------------------------------------------------------
 
     def start(self) -> None:
         """Run forever — call from a daemon thread."""
@@ -260,8 +248,6 @@ class SMCBatchMonitor:
             except Exception:
                 logger.warning("[%s]  poll_cycle error:\n%s", self._label, traceback.format_exc())
             time.sleep(poll)
-
-    # -- Internals ------------------------------------------------------------
 
     def _boot(self) -> None:
         """Load limits, baseline, and set watermark to current max pkey."""
@@ -376,7 +362,6 @@ class SMCBatchMonitor:
 
             self._max_pkey = max(self._max_pkey, pkey)
 
-        # -- Fire alerts
         all_breaches = batch_breaches + shift_breaches
         if all_breaches and (time.time() - self._last_email) >= cooldown:
             self._send_alert(all_breaches, batch_breaches, shift_breaches)

@@ -40,9 +40,6 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-
-# ── Severity thresholds from smc_badbatch_config ─────────────────────────────
-
 def _load_badbatch_thresholds(engine, foundry_line_id: int, config: dict = None) -> Optional[dict]:
     """
     Fetch per-foundry severity thresholds from smc_badbatch_config.
@@ -149,7 +146,6 @@ def _load_badbatch_thresholds(engine, foundry_line_id: int, config: dict = None)
         logger.warning("_load_badbatch_thresholds failed (line=%d): %s", foundry_line_id, exc)
         return None
 
-
 def _deviation_severity(dev: float, thr: dict) -> str:
     """
     Determine severity for a single signed deviation (SMC − COSP).
@@ -173,7 +169,6 @@ _SAFE_IDENTIFIER_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 _SMC_DEFAULT  = "compactability_smc_pct"
 _COSP_DEFAULT = "cosp_percentage_pct"
 
-
 def _safe_col(name: str, default: str) -> str:
     """Return name if it is a safe SQL identifier, otherwise return default and warn."""
     if _SAFE_IDENTIFIER_RE.match(name):
@@ -193,7 +188,6 @@ def _fmt_comp_id(v) -> str:
     except (TypeError, ValueError):
         return str(v).strip()
 
-
 class BadBatchMonitor:
     """Poll additive batches and alert when SMC discharge vs COSP difference exceeds threshold."""
 
@@ -204,8 +198,6 @@ class BadBatchMonitor:
         self._current_component  = ""   # currently running component_id
         self._current_shift      = ""   # shift currently being processed
         self._current_date       = ""   # date currently being processed
-
-    # -- Public ---------------------------------------------------------------
 
     def start(self) -> None:
         """Run forever -- call from a daemon thread."""
@@ -270,8 +262,6 @@ class BadBatchMonitor:
 
             time.sleep(poll_sec)
 
-    # -- Private ---------------------------------------------------------------
-
     def _poll(self, smc_col: str, cosp_col: str,
               detection_mode: str = "db",
               pct_ok_thr: float = 1.0,
@@ -284,7 +274,6 @@ class BadBatchMonitor:
         engine = get_engine(self._config)
         ensure_table(engine)
 
-        # ── Threshold resolution ───────────────────────────────────────────────
         # Two modes only — no watchdog absolute difference thresholds:
         #   "db"         → signed-difference bands from smc_badbatch_config (foundry DB)
         #   "percentage" → |SMC − COSP| / COSP × 100 vs watchdog config % thresholds
@@ -345,7 +334,6 @@ class BadBatchMonitor:
 
             diff = round(smc_val - cosp_val, 3)
 
-            # ── Classify severity ───────────────────────────────────────────────
             if detection_mode == "percentage":
                 if cosp_val == 0:
                     continue
@@ -400,7 +388,6 @@ class BadBatchMonitor:
                     except Exception as _whe:
                         logger.warning("[%s]  Bad-batch webhook failed: %s", self._label, _whe)
 
-        # ── Send ONE summary email per component for all critical batches ───────
         # Instead of 10 emails for 10 batches, sends 1 email per component:
         #   "Component X had N critical bad batches in this poll cycle"
         if _crit_by_comp:
@@ -717,9 +704,6 @@ class BadBatchMonitor:
             logger.warning("[%s]  _fetch_current_component failed: %s", self._label, exc)
             return ""
 
-
-# -- Module helpers ------------------------------------------------------------
-
 def _fetch_new_batches(config: dict, last_pkey: int,
                        smc_col: str, cosp_col: str) -> pd.DataFrame:
     """
@@ -773,14 +757,12 @@ def _fetch_new_batches(config: dict, last_pkey: int,
         logger.warning("_fetch_new_batches (bad_batch) failed: %s", exc)
         return pd.DataFrame()
 
-
 def _to_float(v) -> Optional[float]:
     try:
         f = float(v)
         return f if f == f else None   # NaN guard
     except (TypeError, ValueError):
         return None
-
 
 # -- One-shot check ------------------------------------------------------------
 

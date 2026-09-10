@@ -27,10 +27,8 @@ from urllib.parse import quote_plus
 
 logger = logging.getLogger(__name__)
 
-
 _JDBC_RE = re.compile(r"jdbc:mysql://([^:/]+)(?::(\d+))?/([^?&#]+)")
 
-# --- Foundry display name registry -------------------------------------------
 FOUNDRY_DISPLAY_NAMES: dict[str, str] = {
     "caspro_sandman"     : "GPI",
     "munjalkiriu_sandman": "Munjal Kiriu",
@@ -39,14 +37,11 @@ FOUNDRY_DISPLAY_NAMES: dict[str, str] = {
     "sandman_dev"          : "Sandman",
 }
 
-
 def get_foundry_display_name(db_name: str) -> str:
     """Return the human-readable foundry name for a database name.
     Falls back to the raw db_name when no mapping exists."""
     return FOUNDRY_DISPLAY_NAMES.get(db_name, db_name)
 
-
-# --- JDBC URL parser ---------------------------------------------------------
 def parse_jdbc_url(url: str) -> tuple[str, int, str]:
     """Parse a JDBC MySQL URL -> (host, port, dbname)."""
     m = _JDBC_RE.search(url.strip())
@@ -57,8 +52,6 @@ def parse_jdbc_url(url: str) -> tuple[str, int, str]:
     dbname = m.group(3).rstrip("/")
     return host, port, dbname
 
-
-# --- Registry discovery ------------------------------------------------------
 def discover_foundry_databases(registry_db_cfg: dict) -> list[dict]:
     """
     Connect to the master registry DB and return one DB-info dict per foundry.
@@ -126,7 +119,6 @@ def discover_foundry_databases(registry_db_cfg: dict) -> list[dict]:
 
     return results
 
-
 def discover_foundry_line_ids(db_cfg: dict) -> list[int]:
     """
     Return all active foundry_line_ids from the `foundry_line` table.
@@ -177,7 +169,6 @@ def discover_foundry_line_ids(db_cfg: dict) -> list[int]:
         logger.info("Skipping %s -- not available (%s)", dbname, _short_err(exc))
         return []
 
-
 def _short_err(exc: Exception) -> str:
     """Return a compact error description without the full SQLAlchemy stack."""
     msg = str(exc)
@@ -188,8 +179,6 @@ def _short_err(exc: Exception) -> str:
             return line[:120]
     return msg.splitlines()[0][:120] if msg else str(type(exc).__name__)
 
-
-# --- Per-foundry defaults (used when DB has no row for a foundry line) -------
 _FOUNDRY_DEFAULTS: dict = {
     "monitoring_enabled"   : False,
     "si_alerts_enabled"    : False,
@@ -318,9 +307,6 @@ _FOUNDRY_DEFAULTS: dict = {
     },
 }
 
-
-# --- Config builder ----------------------------------------------------------
-
 def build_foundry_config(base_config: dict, db_info: dict, foundry_line_id: int) -> dict:
     """
     Build a complete per-foundry config by:
@@ -408,7 +394,6 @@ def build_foundry_config(base_config: dict, db_info: dict, foundry_line_id: int)
 
     return cfg
 
-
 def expand_all_foundries(base_config: dict, skip_enabled_check: bool = False) -> list[tuple[str, dict]]:
     """
     High-level helper used by run_alert_monitor.py.
@@ -481,9 +466,6 @@ def expand_all_foundries(base_config: dict, skip_enabled_check: bool = False) ->
     )
     return entries
 
-
-# --- Foundry line names ------------------------------------------------------
-
 def get_line_names(db_cfg: dict) -> dict:
     """
     Return a mapping of {foundry_line_id: line_name} for all lines in this DB.
@@ -501,9 +483,6 @@ def get_line_names(db_cfg: dict) -> dict:
         return {int(r[0]): str(r[1]) for r in rows if r[0] is not None}
     except Exception:
         return {}
-
-
-# --- Live-data check ---------------------------------------------------------
 
 def check_line_has_live_data(db_cfg: dict, foundry_line_id: int, days: int = 30) -> dict:
     """
@@ -570,9 +549,6 @@ def check_line_has_live_data(db_cfg: dict, foundry_line_id: int, days: int = 30)
 
     return result
 
-
-# --- Parameter availability discovery ----------------------------------------
-
 # Columns that are infrastructure / metadata -- never returned as measurement parameters.
 # Only actual sand-quality measurement columns survive this filter.
 _INFRA_COLS = frozenset({
@@ -615,7 +591,6 @@ _INFRA_COLS = frozenset({
     "liq_metal_poured", "total_preparedsand_qty", "returnsand", "core_sand",
     "no_of_moulds", "no_of_castings",
 })
-
 
 def get_available_parameters(db_cfg: dict, foundry_line_id: int) -> dict:
     """
@@ -728,9 +703,6 @@ def get_available_parameters(db_cfg: dict, foundry_line_id: int) -> dict:
 
     return result
 
-
-# --- Full discovery with live status -----------------------------------------
-
 def discover_all_with_status(base_config: dict, live_days: int = 3) -> list[dict]:
     """
     Discover all foundry databases + line IDs and check live-data status.
@@ -790,9 +762,6 @@ def discover_all_with_status(base_config: dict, live_days: int = 3) -> list[dict
         len(result), active_count, data_count,
     )
     return result
-
-
-# --- Internal helper ---------------------------------------------------------
 
 def _make_engine(db_cfg: dict):
     """Create a lightweight SQLAlchemy engine from a database config dict."""

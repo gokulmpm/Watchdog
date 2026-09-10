@@ -37,7 +37,6 @@ logger = logging.getLogger(__name__)
 
 _PRESC_PARAMS = ["bentonite", "freshSilicaSand", "lca", "water"]
 
-
 class PrescriptionWatchdog:
     """Poll for new additive batches and write prescription alerts."""
 
@@ -56,8 +55,6 @@ class PrescriptionWatchdog:
 
         # Per-instance trend history: {(foundry_line_id, component_id, param): [pct_diff, ...]}
         self._trend_history: dict = {}
-
-    # -- Public ---------------------------------------------------------------
 
     def start(self) -> None:
         """Run forever (call from a daemon thread)."""
@@ -142,8 +139,6 @@ class PrescriptionWatchdog:
 
             time.sleep(poll_sec)
 
-    # -- Private ---------------------------------------------------------------
-
     def _poll_new_batches(self, tolerance_pct: float, skip_zero: bool,
                           watch_thr: float = 1.0,
                           critical_thr: float = 3.0,
@@ -222,7 +217,6 @@ class PrescriptionWatchdog:
                     continue
                 # skip_zero=False -> still process so per-param annotations are generated
 
-            # ── Fetch AI prediction from analytics_report for this group/date/shift
             group_name = str(row.get("Group", "") or "")
             batch_date = row.get("Date")
             shift_val  = str(row.get("Shift", "") or "")
@@ -473,7 +467,6 @@ class PrescriptionWatchdog:
             logger.warning("[%s]  _fetch_current_component failed: %s", self._label, exc)
             return ""
 
-
 # -- Module-level helpers ------------------------------------------------------
 
 _PARAM_LABELS = {
@@ -500,7 +493,6 @@ _PARAM_TO_SETPOINT_COL = {
 }
 
 # trend_history moved to PrescriptionWatchdog.__init__ as self._trend_history
-
 
 # Cache: (fl_id, group_name, date_str, shift) -> prediction dict
 # One DB hit per (group, date, shift) — all batches in the same shift reuse it.
@@ -564,7 +556,6 @@ def _fetch_analytics_prediction(config: dict, group_name: str,
         logger.debug("_fetch_analytics_prediction failed: %s", exc)
     return {}
 
-
 def _deviation_severity(abs_pct: float,
                         ok_thr: float,
                         warn_thr: float,
@@ -574,7 +565,6 @@ def _deviation_severity(abs_pct: float,
     if abs_pct <= warn_thr:
         return "warning"
     return "critical"
-
 
 def _build_deviations_list(row: pd.Series, tolerance_pct: float,
                             monitored: list,
@@ -608,7 +598,6 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
     for param in monitored:
         label = _PARAM_LABELS.get(param, param)
 
-        # ── Actual value ──────────────────────────────────────────────────
         actual_col = _PARAM_TO_ACTUAL_COL.get(param)
         actual_raw = row.get(actual_col) if (actual_col and actual_col in row.index) \
                      else row.get(f"{param} Actual")
@@ -652,7 +641,6 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
             })
             continue
 
-        # ── Setpoint value (from additive table) ─────────────────────────
         sp_col   = _PARAM_TO_SETPOINT_COL.get(param)
         sp_raw   = row.get(sp_col) if (sp_col and sp_col in row.index) else None
         setpoint = None
@@ -663,7 +651,6 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
             except (TypeError, ValueError):
                 pass
 
-        # ── AI Prediction value ───────────────────────────────────────────
         if param in prediction and prediction[param]:
             pred = float(prediction[param])
         else:
@@ -675,9 +662,7 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
             if pred is not None and (pred != pred or pred == 0.0):
                 pred = None
 
-        # ════════════════════════════════════════════════════════════════
         #  Comparison A: Actual vs AI Prediction
-        # ════════════════════════════════════════════════════════════════
         if pred is not None:
             diff_pred     = round(actual - pred, 3)
             pct_pred      = round((actual - pred) / pred * 100, 2) if pred else 0.0
@@ -720,9 +705,7 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
                     ),
                 })
 
-        # ════════════════════════════════════════════════════════════════
         #  Comparison B: Actual vs Setpoint (only if enabled)
-        # ════════════════════════════════════════════════════════════════
         if setpoint_monitoring and setpoint is not None:
             diff_sp    = round(actual - setpoint, 3)
             pct_sp     = round((actual - setpoint) / setpoint * 100, 2) if setpoint else 0.0
@@ -752,13 +735,11 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
                     ),
                 })
 
-        # ════════════════════════════════════════════════════════════════
         #  Comparison C: Setpoint vs AI Prescription
         #  Fires when the machine setpoint itself is outside the allowed
         #  tolerance of the prescribed value — regardless of what was
         #  actually dosed.  Indicates the operator has not updated the
         #  machine setpoint to match the latest prescription.
-        # ════════════════════════════════════════════════════════════════
         if setpoint_monitoring and setpoint is not None and pred is not None:
             diff_sp_pred = round(setpoint - pred, 3)
             abs_diff     = abs(diff_sp_pred)
@@ -788,7 +769,6 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
 
     return deviations
 
-
 def _compute_trend(history: list, min_batches: int = 3, ok_thr: float = 1.0) -> str:
     """
     Analyse the last N pct_diff values for a consistent pattern.
@@ -808,7 +788,6 @@ def _compute_trend(history: list, min_batches: int = 3, ok_thr: float = 1.0) -> 
         return f"Consistently over-dosed in {n_pos}/{n} recent batches (avg {avg:+.1f}%)"
     return ""
 
-
 def _all_actuals_zero(row: pd.Series, monitored: list) -> bool:
     """Return True if every monitored parameter has an actual value of 0 or null."""
     for param in monitored:
@@ -823,7 +802,6 @@ def _all_actuals_zero(row: pd.Series, monitored: list) -> bool:
         except (TypeError, ValueError):
             continue
     return True
-
 
 # -- One-shot check ------------------------------------------------------------
 
@@ -846,7 +824,6 @@ def run_check(config: dict, days: int = 7, write_db: bool = False) -> None:
     skip_zero     = bool(pw_cfg.get("skip_zero_batches", True))
     monitored     = pw_cfg.get("monitored_params") or _PRESC_PARAMS
 
-    # -- Find the currently running component -----------------------------------
     fl_id   = int(config.get("foundry_line_id", 1))
     current_comp = ""
     try:
@@ -946,9 +923,6 @@ def run_check(config: dict, days: int = 7, write_db: bool = False) -> None:
 
     print(SEP)
     print()
-
-
-# -- Standalone entry point ----------------------------------------------------
 
 if __name__ == "__main__":
     import argparse

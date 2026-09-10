@@ -35,7 +35,6 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-
 class ComponentChangeMonitor:
     """Poll additive batches and alert whenever component_id changes."""
 
@@ -44,8 +43,6 @@ class ComponentChangeMonitor:
         self._label              = label
         self._last_batch_pkey    = 0
         self._last_component_id  = None   
-
-    # -- Public ---------------------------------------------------------------
 
     def start(self) -> None:
         """Run forever -- call from a daemon thread."""
@@ -87,8 +84,6 @@ class ComponentChangeMonitor:
                 logger.error("[%s]  Poll error:\n%s", self._label, traceback.format_exc())
 
             time.sleep(poll_sec)
-
-    # -- Private ---------------------------------------------------------------
 
     def _poll(self, poll_sec: int) -> int:
         from .pipeline.db_connector import get_engine
@@ -172,20 +167,15 @@ class ComponentChangeMonitor:
             logger.warning("[%s]  _fetch_initial_state failed: %s", self._label, exc)
         return 0, None
 
-
-# -- Module helpers ------------------------------------------------------------
-
 def _use_scada(config: dict) -> bool:
     """Return True when this foundry line uses scada_data instead of additive."""
     return bool(config.get("component_change_watchdog", {}).get("use_scada", False))
-
 
 def _fetch_new_batches(config: dict, last_pkey: int) -> pd.DataFrame:
     """Route to the correct source table based on config."""
     if _use_scada(config):
         return _fetch_new_batches_scada(config, last_pkey)
     return _fetch_new_batches_additive(config, last_pkey)
-
 
 def _fetch_new_batches_additive(config: dict, last_pkey: int) -> pd.DataFrame:
     """
@@ -226,7 +216,6 @@ def _fetch_new_batches_additive(config: dict, last_pkey: int) -> pd.DataFrame:
     except Exception as exc:
         logger.warning("_fetch_new_batches_additive failed: %s", exc)
         return pd.DataFrame()
-
 
 def _fetch_new_batches_scada(config: dict, last_pkey: int) -> pd.DataFrame:
     """
@@ -273,7 +262,6 @@ def _fetch_new_batches_scada(config: dict, last_pkey: int) -> pd.DataFrame:
         logger.warning("_fetch_new_batches_scada failed: %s", exc)
         return pd.DataFrame()
 
-
 def _fetch_component_weight(config: dict, component_id: str) -> Optional[float]:
     """Return the most-recent nett_casting_wt for this component_id."""
     from .pipeline.db_connector import get_engine
@@ -303,7 +291,6 @@ def _fetch_component_weight(config: dict, component_id: str) -> Optional[float]:
         logger.debug("_fetch_component_weight failed for %s: %s", component_id, exc)
     return None
 
-
 def _fetch_component_name(config: dict, component_id: str) -> str:
     """Return component_name from the components table, or empty string."""
     from .pipeline.db_connector import get_engine
@@ -323,7 +310,6 @@ def _fetch_component_name(config: dict, component_id: str) -> str:
     except Exception as exc:
         logger.debug("_fetch_component_name failed for %s: %s", component_id, exc)
     return ""
-
 
 def _fetch_smr(config: dict, component_id: str) -> Optional[float]:
     """Return sand_metal_ratio for this component from the components table."""
@@ -348,7 +334,6 @@ def _fetch_smr(config: dict, component_id: str) -> Optional[float]:
     except Exception as exc:
         logger.debug("_fetch_smr failed for %s: %s", component_id, exc)
     return None
-
 
 def _fetch_current_prescription(config: dict, group_name: str,
                                  target_date: date, shift: str) -> Optional[dict]:
@@ -386,7 +371,6 @@ def _fetch_current_prescription(config: dict, group_name: str,
         logger.debug("_fetch_current_prescription failed: %s", exc)
     return None
 
-
 def _build_component_info(config: dict, row: pd.Series) -> dict:
     """Assemble all component metadata for the alert payload."""
     component_id = str(row.get("component_id") or "").strip()
@@ -405,14 +389,12 @@ def _build_component_info(config: dict, row: pd.Series) -> dict:
         "prescription"       : prescription,
     }
 
-
 def _to_float(v) -> Optional[float]:
     try:
         f = float(v)
         return f if f == f else None   # NaN guard
     except (TypeError, ValueError):
         return None
-
 
 # -- One-shot check ------------------------------------------------------------
 

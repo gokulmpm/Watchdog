@@ -55,18 +55,12 @@ _foundries_cache:      list | None = None
 _foundries_cache_time: float       = 0.0
 _FOUNDRIES_CACHE_TTL   = 300.0     # seconds (5 minutes)
 
-
-# --- Bootstrap ----------------------------------------------------------------
-
 def _get_engine():
     global _engine
     if _engine is None:
         from .pipeline.db_connector import get_engine
         _engine = get_engine(_config)
     return _engine
-
-
-# --- Routes -------------------------------------------------------------------
 
 def _verify_sandman_password(username: str, raw_password: str) -> bool:
     """Verify credentials against sandman_dev using Spring ShaPasswordEncoder(256).
@@ -91,7 +85,6 @@ def _verify_sandman_password(username: str, raw_password: str) -> bool:
         logger.warning("password verification failed for '%s': %s", username, exc)
         return False
 
-
 @app.route("/favicon.ico")
 def favicon():
     # Return the SVG favicon as an ICO-compatible response
@@ -109,7 +102,6 @@ def favicon():
 def health():
     from flask import jsonify
     return jsonify({"status": "ok"}), 200
-
 
 @app.route("/")
 def index():
@@ -156,7 +148,6 @@ def terms():
 def contact():
     return render_template("contact.html")
 
-
 def _alerts_engine(db_name: str | None):
     """Return engine for the requested foundry DB, or the server default."""
     if db_name:
@@ -165,7 +156,6 @@ def _alerts_engine(db_name: str | None):
         except Exception as exc:
             logger.warning("_alerts_engine: cannot connect to %s (%s) — using default", db_name, exc)
     return _get_engine()
-
 
 _ALERTS_SELECT = """
     SELECT `id`, `alert_type`, `foundry_line_id`, `date`, `shift`,
@@ -179,7 +169,6 @@ _ALERTS_SELECT = """
            `created_at`, `updated_at`
     FROM   `watchdog_alerts`
 """
-
 
 def _fill_component_names(engine, alerts: list):
     """Fill missing component_name on alert dicts from the components table."""
@@ -203,7 +192,6 @@ def _fill_component_names(engine, alerts: list):
                 a["component_name"] = name_map.get(str(a["component_id"]))
     except Exception as exc:
         logger.debug("component name enrichment skipped: %s", exc)
-
 
 @app.route("/api/alerts")
 def get_alerts():
@@ -243,7 +231,6 @@ def get_alerts():
         logger.error("get_alerts failed: %s", exc)
         return jsonify({"error": str(exc)}), 500
 
-
 @app.route("/api/alerts/all")
 def get_all_alerts():
     db_name = request.args.get("db",      None)
@@ -267,7 +254,6 @@ def get_all_alerts():
     except Exception as exc:
         logger.error("get_all_alerts failed: %s", exc)
         return jsonify({"error": str(exc)}), 500
-
 
 @app.route("/api/alerts/<int:alert_id>/acknowledge", methods=["POST"])
 def acknowledge_alert(alert_id: int):
@@ -307,7 +293,6 @@ def acknowledge_alert(alert_id: int):
         logger.error("acknowledge_alert failed: %s", exc)
         return jsonify({"error": str(exc)}), 500
 
-
 @app.route("/api/features")
 def get_features():
     """Return which optional monitors are enabled for the active foundry line."""
@@ -323,14 +308,10 @@ def get_features():
         "foundry_line_id"     : fl_id,
     })
 
-
 @app.route("/api/alerts/<int:alert_id>/dismiss", methods=["POST"])
 def dismiss_alert(alert_id: int):
     # Client-side only -- just return OK so the front-end can remove the card
     return jsonify({"ok": True, "id": alert_id})
-
-
-# --- Property-Deviation Alerts (REMOVED — endpoints kept as stubs for compat) -
 
 _PROP_ALERTS_SELECT = """
     SELECT `id`, `foundry_line_id`, `date`, `shift`, `period_key`, `mode`, `component_id`,
@@ -347,25 +328,19 @@ _PROP_ALERTS_SELECT = """
     FROM   `property_alerts`
 """
 
-
 @app.route("/api/property-alerts")
 @app.route("/api/property-alerts/all")
 def get_property_alerts():
     return jsonify([])   # feature removed
 
-
 @app.route("/api/property-alerts/<int:alert_id>/acknowledge", methods=["POST"])
 def acknowledge_property_alert(alert_id: int):
     return jsonify({"ok": True, "id": alert_id})
-
-
-# --- Configuration UI ---------------------------------------------------------
 
 @app.route("/config")
 def config_page():
     """Serve the watchdog configuration page."""
     return render_template("config.html")
-
 
 @app.route("/api/config/foundries")
 def get_config_foundries():
@@ -393,7 +368,6 @@ def get_config_foundries():
     except Exception as exc:
         logger.error("get_config_foundries failed: %s", exc)
         return jsonify({"error": str(exc)}), 500
-
 
 @app.route("/api/user-foundry")
 def get_user_foundry():
@@ -486,7 +460,6 @@ def get_user_foundry():
             "lines"        : [{"id": 1, "name": "Line 1"}],
         })
 
-
 @app.route("/api/config/customers")
 def get_customers():
     """Return list of customers from sandman_dev registry for webhook foundry_key selection."""
@@ -505,7 +478,6 @@ def get_customers():
         logger.warning("get_customers failed: %s", exc)
         return jsonify([])
 
-
 @app.route("/api/config/foundry-line-names")
 def get_foundry_line_names():
     """Return {foundry_line_id: line_name} for a foundry DB (e.g. {1: 'SAVELLI'})."""
@@ -519,7 +491,6 @@ def get_foundry_line_names():
     except Exception as exc:
         logger.error("get_foundry_line_names failed: %s", exc)
         return jsonify({}), 200   # non-fatal -- UI will fall back to "Line N"
-
 
 @app.route("/api/config/badbatch-db-limits")
 def get_badbatch_db_limits():
@@ -556,7 +527,6 @@ def get_badbatch_db_limits():
     except Exception as exc:
         logger.error("get_badbatch_db_limits failed: %s", exc)
         return jsonify({"found": False, "error": str(exc)}), 200
-
 
 @app.route("/api/config/foundry-param-names")
 def get_foundry_param_names():
@@ -630,7 +600,6 @@ def get_foundry_param_names():
         logger.warning("get_foundry_param_names failed (%s L%d): %s", db_name, line_id, exc)
         return jsonify({}), 200   # non-fatal -- UI auto-formats column names
 
-
 @app.route("/api/config/foundry-params")
 def get_foundry_params():
     """
@@ -661,7 +630,6 @@ def get_foundry_params():
     except Exception as exc:
         logger.error("get_foundry_params failed: %s", exc)
         return jsonify({"error": str(exc)}), 500
-
 
 def _build_param_chart_limits(db_name: str, line_id: int, saved: dict) -> dict:
     """
@@ -710,7 +678,6 @@ def _build_param_chart_limits(db_name: str, line_id: int, saved: dict) -> dict:
     except Exception as exc:
         logger.debug("_build_param_chart_limits failed: %s", exc)
         return saved   # fall back to whatever was saved
-
 
 @app.route("/api/config/foundry-config", methods=["GET"])
 def get_foundry_config():
@@ -957,7 +924,6 @@ def get_foundry_config():
         "additive_delay_seconds": int(fc.get("additive_delay_seconds") or 0),
         "material_tolerance_pct": float(fc.get("material_tolerance_pct") or 3.0),
     })
-
 
 @app.route("/api/config/foundry-config", methods=["POST"])
 def save_foundry_config():
@@ -1277,9 +1243,6 @@ def save_foundry_config():
         logger.error("save_foundry_config failed (%s): %s", label, exc)
         return jsonify({"error": str(exc)}), 500
 
-
-# --- Helper -------------------------------------------------------------------
-
 def _row_to_dict(row) -> dict:
     d = dict(row)
     for key in ("date", "created_at", "updated_at", "acknowledged_at", "batch_time"):
@@ -1305,9 +1268,6 @@ def _row_to_dict(row) -> dict:
         d["component_info_json"] = {}
     return d
 
-
-# --- Entry point --------------------------------------------------------------
-
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Watchdog Alert Dashboard Server")
@@ -1327,7 +1287,6 @@ def main():
     with open(cfg_path, encoding="utf-8") as f:
         _config = json.load(f)
 
-    # -- Env var overrides (env vars win over file values) ---------------------
     import os as _os
     _ENV_MAP = {
         "ANTHROPIC_API_KEY"   : ("anthropic_api_key",),
@@ -1353,7 +1312,6 @@ def main():
 
     app.secret_key = _config.get("dashboard_secret", "sandman-watchdog-dashboard-2026")
 
-    # -- Bootstrap DB config store ---------------------------------------------
     from .config_store import (
         get_registry_engine, ensure_config_table,
         seed_foundry_configs, load_all_configs,
@@ -1376,7 +1334,6 @@ def main():
         logger.warning("Config DB bootstrap failed -- using JSON file only: %s", exc)
         _reg_engine = None
 
-    # -- Migrate watchdog_alerts table (adds new columns if missing) -----------
     try:
         from .alert_db_writer import ensure_table
         ensure_table(_get_engine())
@@ -1390,7 +1347,6 @@ def main():
     )
     logger.info("Alert dashboard -> http://%s:%d/", args.host, args.port)
     app.run(host=args.host, port=args.port, debug=args.debug, use_reloader=False)
-
 
 # ── Per-foundry config + engine helpers for multi-DB endpoints ────────────────
 
@@ -1407,12 +1363,10 @@ def _foundry_cfg(db_name: str, line_id: int) -> dict:
     cfg = {**base, "database": base_db, "foundry_line_id": line_id, **overlay}
     return cfg
 
-
 def _get_engine_for(cfg: dict):
     """Return a SQLAlchemy engine for an arbitrary config dict."""
     from .pipeline.db_connector import get_engine as _ge
     return _ge(cfg)
-
 
 # ── Prepared sand snapshot for a component's production window ────────────────
 
@@ -1547,8 +1501,6 @@ def _fetch_ps_for_component(engine, line_id: int, component_id: str,
     }
     return result
 
-
-# ══════════════════════════════════════════════════════════════════════════════
 #  NOTIFICATIONS API
 #  GET /api/notifications?db=caspro_sandman&line_id=1&since_minutes=60
 #
@@ -1577,7 +1529,6 @@ def _fetch_ps_for_component(engine, line_id: int, component_id: str,
 #    "related_bad_batches": [],  # Prescription only: simultaneous bad batches
 #    "notified_at": null,        # set to now on first read via mark-notified
 #  }
-# ══════════════════════════════════════════════════════════════════════════════
 
 @app.route("/api/notifications")
 def get_notifications():
@@ -1892,7 +1843,6 @@ def get_notifications():
 
     return jsonify({"alerts": alerts, "count": len(alerts)})
 
-
 @app.route("/api/notifications/<int:alert_id>/mark-notified", methods=["POST"])
 def mark_notified(alert_id: int):
     """
@@ -1916,7 +1866,6 @@ def mark_notified(alert_id: int):
         return jsonify({"ok": True, "id": alert_id})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
-
 
 # ── Test-email endpoint (Config UI) ───────────────────────────────────────────
 @app.route("/api/run-once", methods=["POST"])
@@ -1960,7 +1909,6 @@ def run_once():
     summary = {"label": label, "date": date_str, "written": [], "errors": []}
 
     try:
-        # ── Build config (DB config takes priority over JSON) ─────────────────
         cfg    = _foundry_cfg(db_name, line_id)
         engine = _get_engine_for(cfg)
         if _reg_engine:
@@ -2034,7 +1982,6 @@ def run_once():
         def _write_prop(result, mode_lbl):
             pass  # property alerts removed
 
-        # ── Resolve shifts on target date ─────────────────────────────────────
         try:
             rows = engine.connect().execute(text(
                 "SELECT DISTINCT `shift` FROM `preparedsand` "
@@ -2219,7 +2166,6 @@ def run_once():
 
     return jsonify(summary)
 
-
 @app.route("/api/config/test-webhook", methods=["POST"])
 def test_webhook():
     """
@@ -2252,7 +2198,6 @@ def test_webhook():
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 200
 
-
 @app.route("/api/config/test-email", methods=["POST"])
 def test_email():
     """Send a test email using the SMTP settings from the request body."""
@@ -2277,10 +2222,7 @@ def test_email():
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
 
-
-# ══════════════════════════════════════════════════════════════════════════════
 #  SIGMA ZONE TREND API
-# ══════════════════════════════════════════════════════════════════════════════
 
 @app.route("/api/si-param-trend")
 def si_param_trend():
@@ -2359,10 +2301,7 @@ def si_param_trend():
         logger.error("si_param_trend error: %s", exc, exc_info=True)
         return jsonify({"error": str(exc)}), 500
 
-
-# ══════════════════════════════════════════════════════════════════════════════
 #  COMPONENT REPORT API
-# ══════════════════════════════════════════════════════════════════════════════
 
 @app.route("/api/component-report/data")
 def component_report_data():
@@ -2445,7 +2384,6 @@ def component_report_data():
         logger.error("component_report_data error: %s", exc, exc_info=True)
         return jsonify({"error": str(exc)}), 500
 
-
 @app.route("/api/component-report/download")
 def component_report_download():
     """
@@ -2516,7 +2454,6 @@ def component_report_download():
         logger.error("component_report_download error: %s", exc, exc_info=True)
         return jsonify({"error": str(exc)}), 500
 
-
 def _pptx_to_pdf_via_com(pptx_bytes: bytes) -> bytes:
     """
     Convert PPTX bytes -> PDF bytes using PowerPoint COM automation (Windows only).
@@ -2560,7 +2497,6 @@ def _pptx_to_pdf_via_com(pptx_bytes: bytes) -> bytes:
             shutil.rmtree(tmp, ignore_errors=True)
         except Exception:
             pass
-
 
 def _fetch_badbatch_thresholds(engine, line_id: int) -> dict:
     """
@@ -2659,7 +2595,6 @@ def _fetch_badbatch_thresholds(engine, line_id: int) -> dict:
         logger.warning("_fetch_badbatch_thresholds failed (line=%d): %s", line_id, exc)
         return None
 
-
 def _batch_deviation_severity(dev: float, thr: dict) -> str:
     """
     Severity for a single signed deviation value (SMC − COSP) using DB thresholds.
@@ -2687,7 +2622,6 @@ def _batch_deviation_severity(dev: float, thr: dict) -> str:
         return "watch"
     return "ok"
 
-
 def _badbatch_run_severity(signed_devs: list, thr: dict) -> str:
     """Return the worst severity across all batch deviations in a run."""
     _RANK = {"ok": 0, "watch": 1, "alert": 2, "critical": 3}
@@ -2697,7 +2631,6 @@ def _badbatch_run_severity(signed_devs: list, thr: dict) -> str:
         if _RANK[s] > _RANK[worst]:
             worst = s
     return worst
-
 
 @app.route("/api/components")
 def list_components():
@@ -2857,7 +2790,6 @@ def list_components():
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
-
 @app.route("/api/production-report/download")
 def production_report_download():
     """
@@ -2895,7 +2827,6 @@ def production_report_download():
         logger.error("production_report_download error: %s", exc, exc_info=True)
         return jsonify({"error": str(exc)}), 500
 
-
 @app.route("/api/reports/list")
 def list_generated_reports():
     """
@@ -2926,7 +2857,6 @@ def list_generated_reports():
 
     return jsonify({"reports": list(seen.values()), "date": date_str})
 
-
 @app.route("/api/reports/download")
 def download_generated_report():
     """
@@ -2953,7 +2883,6 @@ def download_generated_report():
             if fmt == "pptx" else "application/pdf")
     return send_file(str(path), mimetype=mime, as_attachment=True,
                      download_name=f"{safe}_{date_str}.{fmt}")
-
 
 @app.route("/api/cost-saving/baseline")
 def cost_saving_baseline():
@@ -3098,7 +3027,6 @@ def cost_saving_baseline():
         import traceback as _tb
         return jsonify({"error": str(exc), "detail": _tb.format_exc()}), 500
 
-
 @app.route("/api/rejection-data")
 def rejection_data():
     """
@@ -3132,7 +3060,6 @@ def rejection_data():
         cfg    = _foundry_cfg(db_name, line_id)
         engine = _get_engine_for(cfg)
 
-        # ── Check prod_flow_change ────────────────────────────────────────────
         with engine.connect() as conn:
             flow_row = conn.execute(
                 text("SELECT prod_flow_change FROM foundry_line WHERE pkey = :lid AND is_active = 1"),
@@ -3391,9 +3318,6 @@ def rejection_data():
         logger.exception("rejection_data error: %s", exc)
         return jsonify({"error": str(exc)}), 500
 
-
-# ── Data Flow annotate endpoint (form page for Investigate / Snooze) ─────────
-
 @app.route("/api/data-flow/annotate", methods=["GET", "POST"])
 def data_flow_annotate():
     """
@@ -3480,9 +3404,6 @@ def data_flow_annotate():
   </div>
 </body>
 </html>"""
-
-
-# ── Data Flow confirmation endpoint ──────────────────────────────────────────
 
 @app.route("/api/data-flow/confirm")
 def data_flow_confirm():
@@ -3636,7 +3557,6 @@ def data_flow_confirm():
 </body>
 </html>"""
     return html
-
 
 if __name__ == "__main__":
     main()
