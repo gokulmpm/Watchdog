@@ -198,6 +198,7 @@ class BadBatchMonitor:
         self._current_component  = ""   # currently running component_id
         self._current_shift      = ""   # shift currently being processed
         self._current_date       = ""   # date currently being processed
+        self._last_summary_date  = ""   # last date for which a daily summary was sent
 
     def start(self) -> None:
         """Run forever -- call from a daemon thread."""
@@ -256,6 +257,24 @@ class BadBatchMonitor:
                                 self._label, idle_secs / 60,
                             )
                             return
+
+                # Time-based daily summary fallback — fires even when no new batches arrive.
+                # Catches idle foundries (overnight, weekends) where shift boundary detection
+                # in _poll() never triggers because no new batch rows arrive.
+                _today = datetime.now().strftime("%Y-%m-%d")
+                if _today != self._last_summary_date:
+                    _yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+                    _send_for  = self._last_summary_date or _yesterday
+                    if _send_for != _today:
+                        try:
+                            from .pipeline.db_connector import get_engine as _ge
+                            _engine = _ge(self._config)
+                            _fl_id  = int(self._config.get("foundry_line_id", 1))
+                            self._send_daily_summary(_engine, _fl_id, _send_for)
+                            logger.info("[%s]  Time-based daily summary sent for %s", self._label, _send_for)
+                        except Exception as _tse:
+                            logger.warning("[%s]  Time-based daily summary failed: %s", self._label, _tse)
+                    self._last_summary_date = _today
 
             except Exception:
                 logger.error("[%s]  Poll error:\n%s", self._label, traceback.format_exc())
@@ -450,6 +469,10 @@ class BadBatchMonitor:
 
     def _send_shift_summary(self, engine, fl_id: int, date_str: str, shift: str) -> None:
         """Query bad batch counts for the completed shift and send a summary email."""
+        if not self._config.get("bad_batch_watchdog", {}).get("enabled", False):
+            logger.debug("[%s]  Shift summary skipped — bad batch monitoring not enabled", self._label)
+            return
+
         from sqlalchemy import text as _text
 
         smc_col  = _safe_col(str(self._config.get("bad_batch_watchdog", {}).get("smc_col",  _SMC_DEFAULT)),  _SMC_DEFAULT)
