@@ -297,14 +297,42 @@ class DataFlowMonitor:
             except Exception as exc:
                 logger.error("[%s][line=%d] poll failed: %s", self._label, line_id, exc)
 
+    def _get_line_config(self, foundry_line_id: int) -> dict:
+        """
+        Load the per-line config from watchdog_si_config for this foundry_line_id.
+        Label pattern: {db_name}_L{foundry_line_id}  (e.g. munjal_sandman_L1)
+        Falls back to self._config if no DB entry exists.
+        """
+        try:
+            from watchdog.config_store import load_foundry_config
+            db_name = self._config.get("database", {}).get("name", "")
+            label   = f"{db_name}_L{foundry_line_id}"
+            cfg = load_foundry_config(self._discovery_engine, label)
+            if cfg:
+                return cfg
+        except Exception as exc:
+            logger.debug("[%s][line=%d] _get_line_config failed: %s",
+                         self._label, foundry_line_id, exc)
+        return self._config
+
     def _poll_line(self, foundry_line_id: int) -> None:
         """Full monitoring cycle for one foundry line."""
+        # Load per-line config — each line (L1, L2) has its own watchdog_si_config entry
+        line_cfg = self._get_line_config(foundry_line_id)
+        df_line  = line_cfg.get("data_flow", {})
+
+        # Skip lines where data flow monitoring is explicitly disabled
+        if df_line.get("enabled") is False:
+            logger.debug("[%s][line=%d] data_flow.enabled=false — skipping",
+                         self._label, foundry_line_id)
+            return
+
         active_sources = load_active_sources(self._registry_engine, foundry_line_id)
         if not active_sources:
             return
 
-        # Filter out sources disabled in the foundry config
-        _disabled = set(self._config.get("data_flow", {}).get("disabled_sources", []))
+        # Filter out sources disabled in this line's config
+        _disabled = set(df_line.get("disabled_sources", []))
         if _disabled:
             active_sources = [r for r in active_sources if r["source_name"] not in _disabled]
             if not active_sources:
@@ -388,7 +416,8 @@ class DataFlowMonitor:
                             self._label, foundry_line_id, src, gap_seconds
                         )
                         self._fire_source_alert(
-                            foundry_line_id, src, gap_seconds, last_seen
+                            foundry_line_id, src, gap_seconds, last_seen,
+                            line_cfg=line_cfg,
                         )
                 else:
                     status = "learning"
@@ -588,14 +617,17 @@ class DataFlowMonitor:
         source_name: str,
         gap_seconds: float,
         last_seen: Optional[datetime],
+        line_cfg: dict = None,
     ) -> None:
         """
         Fire an alert when a specific source goes MISSING.
         1. Write to watchdog_alerts (visible on dashboard)
-        2. Send email notification (respects send_data_flow + min_severity from DB config)
+        2. Send email notification (respects send_data_flow + min_severity from per-line DB config)
         Rate-limited to data_flow.alert_resend_hours (default 1h) per source.
         """
-        df_cfg = self._config.get("data_flow", {})
+        # Use per-line config for all alert filtering — falls back to global config
+        cfg    = line_cfg if line_cfg is not None else self._config
+        df_cfg = cfg.get("data_flow", {})
         resend_hours = float(df_cfg.get("alert_resend_hours", 1))
 
         key = (foundry_line_id, source_name)
@@ -603,14 +635,14 @@ class DataFlowMonitor:
         if last and (datetime.now() - last).total_seconds() < resend_hours * 3600:
             return
 
-        # Respect send_data_flow toggle and min_severity from DB config
+        # Respect per-line send_data_flow toggle
         if not df_cfg.get("send_data_flow", True):
             logger.debug("[%s][line=%d][%s] send_data_flow=false — alert suppressed",
                          self._label, foundry_line_id, source_name)
             return
+        # Respect per-line min_severity — data_flow alerts are always critical
         min_sev = str(df_cfg.get("min_severity", "warning")).lower()
-        # data_flow alerts are always "critical" severity — only suppress if min_severity is above critical
-        _order = {"warning": 0, "critical": 1}
+        _order  = {"warning": 0, "critical": 1}
         if _order.get("critical", 1) < _order.get(min_sev, 0):
             logger.debug("[%s][line=%d][%s] severity=critical below min_severity=%s — suppressed",
                          self._label, foundry_line_id, source_name, min_sev)
