@@ -2478,7 +2478,7 @@ function fillTrigger(cfg) {
 }
 
 /* ── Fill prescription tab ── */
-function renderPrescriptionParams(availParams, monitored) {
+function renderPrescriptionParams(availParams, monitored, cfg) {
   const el = document.getElementById('pwParamList');
   if (!availParams || !availParams.length) {
     el.innerHTML = '<div class="na-msg">No prescription data found for this foundry line.</div>';
@@ -2490,10 +2490,11 @@ function renderPrescriptionParams(availParams, monitored) {
       <span>Parameter</span>
       <span>Column</span>
     </div>`;
-  const pthr = (cfg.prescription_watchdog || {}).param_thresholds || {};
-  const globalOk   = (cfg.prescription_watchdog || {}).tolerance_pct ?? 1.0;
-  const globalWarn = (cfg.prescription_watchdog || {}).watch_thr      ?? 3.0;
-  const globalCrit = (cfg.prescription_watchdog || {}).critical_thr   ?? 6.0;
+  const pw         = (cfg || {}).prescription_watchdog || {};
+  const pthr       = pw.param_thresholds || {};
+  const globalOk   = pw.tolerance_pct ?? 1.0;
+  const globalWarn = pw.watch_thr      ?? 3.0;
+  const globalCrit = pw.critical_thr   ?? 6.0;
   for (const p of availParams) {
     const chk  = monitored.has(p.key) ? 'checked' : '';
     const pt   = pthr[p.key] || {};
@@ -2557,7 +2558,7 @@ function fillPrescription(cfg, availParams) {
       ? savedMonitored
       : (availParams || []).map(p => p.key)
   );
-  renderPrescriptionParams(availParams || [], monitored);
+  renderPrescriptionParams(availParams || [], monitored, cfg);
 
   // ── Component Change Watchdog ──
   const ccw = cfg.component_change_watchdog || {};
