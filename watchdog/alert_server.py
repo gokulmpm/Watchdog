@@ -98,6 +98,13 @@ def favicon():
     from flask import Response
     return Response(svg, mimetype="image/svg+xml")
 
+def _require_auth():
+    """Return a 401 JSON response if the request is not authenticated, else None."""
+    from flask import session, jsonify
+    if not session.get("user"):
+        return jsonify({"error": "Unauthorised"}), 401
+    return None
+
 @app.route("/api/health")
 def health():
     from flask import jsonify
@@ -257,6 +264,8 @@ def get_all_alerts():
 
 @app.route("/api/alerts/<int:alert_id>/acknowledge", methods=["POST"])
 def acknowledge_alert(alert_id: int):
+    _auth = _require_auth()
+    if _auth: return _auth
     body = request.get_json(silent=True) or {}
     ack_by     = str(body.get("acknowledged_by", "")).strip() or None
     ack_reason = str(body.get("reason", "")).strip() or None
@@ -310,6 +319,8 @@ def get_features():
 
 @app.route("/api/alerts/<int:alert_id>/dismiss", methods=["POST"])
 def dismiss_alert(alert_id: int):
+    _auth = _require_auth()
+    if _auth: return _auth
     # Client-side only -- just return OK so the front-end can remove the card
     return jsonify({"ok": True, "id": alert_id})
 
@@ -927,6 +938,8 @@ def get_foundry_config():
 
 @app.route("/api/config/foundry-config", methods=["POST"])
 def save_foundry_config():
+    _auth = _require_auth()
+    if _auth: return _auth
     """
     Save monitoring configuration for a specific foundry line.
     Stored under watchdog_config.json > foundry_configs > {db}_L{line_id}.
@@ -1310,7 +1323,13 @@ def main():
                 _config.setdefault(path[0], {})[path[1]] = val
             logger.info("Config: %s overridden from environment", env_key)
 
-    app.secret_key = _config.get("dashboard_secret", "sandman-watchdog-dashboard-2026")
+    _secret = _config.get("dashboard_secret") or os.environ.get("DASHBOARD_SECRET", "")
+    if not _secret:
+        raise RuntimeError(
+            "dashboard_secret is not configured. "
+            "Set it in watchdog_config.json or via the DASHBOARD_SECRET environment variable."
+        )
+    app.secret_key = _secret
 
     from .config_store import (
         get_registry_engine, ensure_config_table,
@@ -1870,6 +1889,8 @@ def mark_notified(alert_id: int):
 # ── Test-email endpoint (Config UI) ───────────────────────────────────────────
 @app.route("/api/run-once", methods=["POST"])
 def run_once():
+    _auth = _require_auth()
+    if _auth: return _auth
     """
     Run all alert modes for a specific date and send emails for critical/alert results.
 
@@ -2168,6 +2189,8 @@ def run_once():
 
 @app.route("/api/config/test-webhook", methods=["POST"])
 def test_webhook():
+    _auth = _require_auth()
+    if _auth: return _auth
     """
     Proxy a test alert POST to the external push-notification API.
     Called by the browser to avoid CORS — server-to-server requests have no CORS restriction.
@@ -2200,6 +2223,8 @@ def test_webhook():
 
 @app.route("/api/config/test-email", methods=["POST"])
 def test_email():
+    _auth = _require_auth()
+    if _auth: return _auth
     """Send a test email using the SMTP settings from the request body."""
     data = request.get_json(silent=True) or {}
     try:

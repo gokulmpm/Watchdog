@@ -126,8 +126,8 @@ def _load_badbatch_thresholds(engine, foundry_line_id: int, config: dict = None)
                         smc_min = float(prop_row["cpk_min"])
                     if prop_row["cpk_max"] is not None:
                         smc_max = float(prop_row["cpk_max"])
-        except Exception:
-            pass
+        except Exception as _exc:
+            logger.debug("SMC range lookup failed for line %d: %s", foundry_line_id, _exc)
 
         thr["smc_min"] = smc_min
         thr["smc_max"] = smc_max
@@ -208,8 +208,14 @@ class BadBatchMonitor:
 
         logger.info("[%s]  Bad-batch monitor starting  (poll=%ds)", self._label, poll_sec)
 
-        self._last_batch_pkey   = self._fetch_max_pkey()
-        self._current_component = self._fetch_current_component()
+        while True:
+            try:
+                self._last_batch_pkey   = self._fetch_max_pkey()
+                self._current_component = self._fetch_current_component()
+                break  # init succeeded
+            except Exception as _init_exc:
+                logger.warning("[%s] startup init failed: %s — retrying in 30s", self._label, _init_exc)
+                time.sleep(30)
         logger.info("[%s]  Starting from batch pkey=%d  component=%s",
                     self._label, self._last_batch_pkey, self._current_component or "(none)")
 
@@ -821,7 +827,7 @@ def run_check(config: dict, write_db: bool = False,
         row = conn.execute(latest_sql, {"fl_id": fl_id}).mappings().first()
 
     if not row:
-        print("No additive batches found for this foundry line.")
+        logger.info("No additive batches found for this foundry line.")
         return
 
     last_comp = _fmt_comp_id(row["component_id"])
@@ -853,8 +859,8 @@ def run_check(config: dict, write_db: bool = False,
                          params={"fl_id": fl_id, "comp": last_comp, "n": last_n})
 
     if df.empty:
-        print(f"\nNo batches with both '{smc_col}' and '{cosp_col}' found "
-              f"for component {last_comp}.")
+        logger.info("No batches with both '%s' and '%s' found for component %s.",
+                    smc_col, cosp_col, last_comp)
         return
 
     if "date" in df.columns:
@@ -863,14 +869,12 @@ def run_check(config: dict, write_db: bool = False,
 
     SEP  = "=" * 80
     SEP2 = "-" * 80
-    print()
-    print(SEP)
-    print(f"  BAD BATCH CHECK  —  Component: {last_comp}")
-    print(f"  Threshold: ±{threshold}   SMC col: {smc_col}   COSP col: {cosp_col}")
-    print(SEP)
-    print(f"  {'#':<5}  {'Date':<12}  {'Shift':<6}  {'Batch':>8}  "
-          f"{'SMC':>7}  {'COSP':>7}  {'Diff':>8}  Status")
-    print(SEP2)
+    logger.info(SEP)
+    logger.info("  BAD BATCH CHECK  —  Component: %s", last_comp)
+    logger.info("  Threshold: ±%s   SMC col: %s   COSP col: %s", threshold, smc_col, cosp_col)
+    logger.info(SEP)
+    logger.info("  %-5s  %-12s  %-6s  %8s  %7s  %7s  %8s  Status", "#", "Date", "Shift", "Batch", "SMC", "COSP", "Diff")
+    logger.info(SEP2)
 
     bad_batches = 0
     if write_db:
@@ -887,10 +891,10 @@ def run_check(config: dict, write_db: bool = False,
         flag    = "  *** BAD BATCH ***" if is_bad else ""
         sign    = "+" if diff >= 0 else ""
 
-        print(f"  {i+1:<5}  {str(row.get('date','')):<12}  "
-              f"{str(row.get('shift','')):<6}  {int(row.get('pkey',0)):>8}  "
-              f"{smc_val:>7.2f}  {cosp_val:>7.2f}  {sign}{diff:>7.2f}  "
-              f"{'BAD' if is_bad else 'OK'}{flag}")
+        logger.info("  %-5d  %-12s  %-6s  %8d  %7.2f  %7.2f  %s%7.2f  %s%s",
+                    i + 1, str(row.get("date", "")), str(row.get("shift", "")),
+                    int(row.get("pkey", 0)), smc_val, cosp_val, sign, diff,
+                    "BAD" if is_bad else "OK", flag)
 
         if is_bad:
             bad_batches += 1
@@ -910,10 +914,9 @@ def run_check(config: dict, write_db: bool = False,
                 write_bad_batch_alert(engine, result, fl_id,
                                       customer_pkey=config.get("customer_pkey", 0))
 
-    print(SEP2)
+    logger.info(SEP2)
     status = f"BAD BATCHES FOUND: {bad_batches}" if bad_batches else "ALL BATCHES OK"
-    print(f"  Result: {status}  (checked {len(df)} batches for component {last_comp})")
+    logger.info("  Result: %s  (checked %d batches for component %s)", status, len(df), last_comp)
     if write_db and bad_batches:
-        print(f"  {bad_batches} bad-batch alert(s) written to DB.")
-    print(SEP)
-    print()
+        logger.info("  %d bad-batch alert(s) written to DB.", bad_batches)
+    logger.info(SEP)

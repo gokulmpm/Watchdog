@@ -60,12 +60,18 @@ class SieveChangeMonitor:
             self._label, poll_sec, idle_timeout,
         )
 
-        self._last_sieve_pkey = self._fetch_max_pkey()
-        # Seed prev_bands from the most recent entry PER SAND TYPE so that
-        # infrequent sand types (NS, CS updated monthly) get a valid baseline
-        # even when the latest sieve pkey is a daily PS/RS-only entry.
-        if self._last_sieve_pkey > 0:
-            self._prev_bands = self._fetch_latest_bands_per_sand_type()
+        while True:
+            try:
+                self._last_sieve_pkey = self._fetch_max_pkey()
+                # Seed prev_bands from the most recent entry PER SAND TYPE so that
+                # infrequent sand types (NS, CS updated monthly) get a valid baseline
+                # even when the latest sieve pkey is a daily PS/RS-only entry.
+                if self._last_sieve_pkey > 0:
+                    self._prev_bands = self._fetch_latest_bands_per_sand_type()
+                break  # init succeeded
+            except Exception as _init_exc:
+                logger.warning("[%s] startup init failed: %s — retrying in 30s", self._label, _init_exc)
+                time.sleep(30)
         logger.info("[%s]  Starting from sieve pkey=%d  (%d bands seeded)",
                     self._label, self._last_sieve_pkey, len(self._prev_bands))
 

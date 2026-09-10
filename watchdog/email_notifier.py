@@ -668,34 +668,79 @@ def send_bad_batch_shift_summary(config: dict, date_str: str, shift: str,
         ok_batches  = total - bad
         ok_pct      = round(100.0 - pct, 1) if total > 0 else 0.0
         bb_cfg      = config.get("bad_batch_watchdog", {})
-        ok_thr      = float(bb_cfg.get("pct_ok_thr", 1.0)) * 100   # e.g. 1.0 → 1.0%
+        ok_thr      = float(bb_cfg.get("pct_ok_thr", 1.0))
         status_line = "OK" if pct <= ok_thr else "BAD BATCH"
+        _customer   = email_cfg.get("dashboard_user", "") or "-"
 
-        lines = [
-            "Bad Batch Shift Summary",
-            "",
-            f"Customer : {email_cfg.get('dashboard_user', '') or '-'}",
-        ]
-        if _foundry:
-            lines.append(f"Foundry  : {_foundry}")
-        lines += [
-            f"Date     : {date_fmt}",
-            "",
-            "=" * 52,
-            f"  {'Shift':<10}  {'Bad Batches':>12}  {'Total Batches':>14}",
-            "-" * 52,
-            f"  {shift:<10}  {bad:>10} ({pct:.1f}%)  {total:>14}",
-            "=" * 52,
-            "",
-            f"  OK Batches : {ok_batches} ({ok_pct:.1f}%)",
-            f"  Status     : {status_line}",
-            "",
-            "@Sandman Team",
-        ]
-        body    = "\n".join(lines)
-        subject = f"[SandMan] Shift {shift} Summary — {date_fmt} | {status_line} ({pct:.1f}% bad batches)"
+        status_color = _C["sage"] if status_line == "OK" else _C["red"]
+        status_bg    = _C["sage_lt"] if status_line == "OK" else _C["red_lt"]
+        pct_color    = _C["red"] if pct > ok_thr else _C["sage"]
 
-        _send_plain(email_cfg, subject, body, alert_type="BAD_BATCH")
+        subject = (
+            f"[SandMan] Shift {shift} Summary — {date_fmt} | "
+            f"{status_line} ({pct:.1f}%,  {bad}/{total} batches)"
+        )
+
+        html = f"""<!DOCTYPE html>
+<html><body style="margin:0;padding:0;background:#f0ede6;font-family:Arial,sans-serif">
+<div style="max-width:520px;margin:32px auto;background:#ffffff;border-radius:6px;
+            border:1px solid #d0ccc4;overflow:hidden">
+
+  <div style="background:{_C['ink']};padding:18px 24px">
+    <div style="font-size:11px;letter-spacing:2px;color:#aaaaaa;text-transform:uppercase;margin-bottom:4px">SandMan AI Watchdog</div>
+    <div style="font-size:18px;font-weight:700;color:#ffffff">Bad Batch Shift Summary</div>
+  </div>
+
+  <div style="padding:16px 24px 0;border-bottom:1px solid #eeeeee">
+    <table style="font-size:13px;color:{_C['muted']};line-height:1.8;border-collapse:collapse">
+      <tr><td style="padding-right:16px;color:{_C['subtle']}">Date</td>
+          <td style="font-weight:600">{date_fmt}</td></tr>
+      {'<tr><td style="padding-right:16px;color:' + _C["subtle"] + '">Foundry</td><td style="font-weight:600">' + _foundry + '</td></tr>' if _foundry else ''}
+      <tr><td style="padding-right:16px;color:{_C['subtle']}">Customer</td>
+          <td style="font-weight:600">{_customer}</td></tr>
+    </table>
+  </div>
+
+  <div style="padding:16px 24px">
+    <table width="100%" cellpadding="0" cellspacing="0"
+           style="border-collapse:collapse;border:1px solid #e0e0e0;border-radius:4px;overflow:hidden">
+      <thead>
+        <tr style="background:{_C['ink']}">
+          <th style="padding:10px 16px;font-size:11px;color:#ffffff;text-align:left;font-weight:600;letter-spacing:0.5px">SHIFT</th>
+          <th style="padding:10px 16px;font-size:11px;color:#ffffff;text-align:right;font-weight:600;letter-spacing:0.5px">BAD %</th>
+          <th style="padding:10px 16px;font-size:11px;color:#ffffff;text-align:right;font-weight:600;letter-spacing:0.5px">BAD BATCHES</th>
+          <th style="padding:10px 16px;font-size:11px;color:#ffffff;text-align:right;font-weight:600;letter-spacing:0.5px">TOTAL BATCHES</th>
+          <th style="padding:10px 16px;font-size:11px;color:#ffffff;text-align:right;font-weight:600;letter-spacing:0.5px">OK BATCHES</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="background:#ffffff;border-bottom:1px solid #e8e8e8">
+          <td style="padding:10px 16px;font-size:13px;color:{_C['muted']};font-weight:600">{shift}</td>
+          <td style="padding:10px 16px;font-size:13px;text-align:right;color:{pct_color};font-weight:700">{pct:.1f}%</td>
+          <td style="padding:10px 16px;font-size:13px;text-align:right;color:{_C['subtle']}">{bad}</td>
+          <td style="padding:10px 16px;font-size:13px;text-align:right;color:{_C['subtle']}">{total}</td>
+          <td style="padding:10px 16px;font-size:13px;text-align:right;color:{_C['subtle']}">{ok_batches} ({ok_pct:.1f}%)</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div style="padding:0 24px 20px">
+    <div style="display:inline-block;background:{status_bg};border:1px solid {status_color};
+                border-radius:4px;padding:8px 18px;font-size:13px;font-weight:700;color:{status_color}">
+      Status : {status_line}
+    </div>
+  </div>
+
+  <div style="background:#f5f5f5;border-top:1px solid #e0e0e0;padding:12px 24px;
+              font-size:11px;color:{_C['subtle']};text-align:center">
+    @Sandman Team
+  </div>
+
+</div>
+</body></html>"""
+
+        _send(email_cfg, subject, html, alert_type="BAD_BATCH")
         logger.info("[%s]  Shift summary email sent — Shift %s  bad=%d/%d (%.1f%%)",
                     label, shift, bad, total, pct)
         return True

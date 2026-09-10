@@ -431,7 +431,7 @@ def run_check(config: dict, write_db: bool = False) -> None:
         df = pd.read_sql(sql, conn, params={"fl_id": fl_id})
 
     if df.empty:
-        print("No additive batches found for this foundry line.")
+        logger.info("No additive batches found for this foundry line.")
         return
 
     if "date" in df.columns:
@@ -448,34 +448,31 @@ def run_check(config: dict, write_db: bool = False) -> None:
             break
 
     SEP = "=" * 70
-    print()
-    print(SEP)
-    print("  COMPONENT CHANGE CHECK")
-    print(SEP)
-    print(f"  Previous Component : {prev_comp or '(unknown — no earlier batch)'}")
-    print(f"  Current  Component : {current_comp}")
-    print(f"  Date / Shift       : {current_row.get('date')}  ·  Shift {current_row.get('shift','')}")
+    logger.info(SEP)
+    logger.info("  COMPONENT CHANGE CHECK")
+    logger.info(SEP)
+    logger.info("  Previous Component : %s", prev_comp or "(unknown — no earlier batch)")
+    logger.info("  Current  Component : %s", current_comp)
+    logger.info("  Date / Shift       : %s  · Shift %s", current_row.get("date"), current_row.get("shift", ""))
     batch_time = current_row.get("batch_time")
     if batch_time is not None:
-        print(f"  Batch Time         : {batch_time}")
+        logger.info("  Batch Time         : %s", batch_time)
 
     info      = _build_component_info(config, current_row)
     comp_name = _fetch_component_name(config, current_comp)
     prev_name = _fetch_component_name(config, prev_comp or "")
 
-    print()
-    print(f"  Previous Component : {prev_comp or '(unknown)'}  {('— ' + prev_name) if prev_name else ''}")
-    print(f"  Current  Component : {current_comp}  {('— ' + comp_name) if comp_name else ''}")
-    print(f"  Group              : {info.get('group_name') or '—'}")
+    logger.info("  Previous Component : %s  %s", prev_comp or "(unknown)", ("— " + prev_name) if prev_name else "")
+    logger.info("  Current  Component : %s  %s", current_comp, ("— " + comp_name) if comp_name else "")
+    logger.info("  Group              : %s", info.get("group_name") or "—")
     weight = info.get("component_weight_kg")
-    print(f"  Component Weight   : {f'{weight:.3f} kg' if weight is not None else '—'}")
+    logger.info("  Component Weight   : %s", f"{weight:.3f} kg" if weight is not None else "—")
     smr = info.get("smr")
-    print(f"  SMR                : {f'{smr:.4f}' if smr is not None else '—'}")
+    logger.info("  SMR                : %s", f"{smr:.4f}" if smr is not None else "—")
 
     presc = info.get("prescription") or {}
-    print()
     if presc:
-        print("  Current Prescription:")
+        logger.info("  Current Prescription:")
         _PLBLS = {
             "bentonite": "Bentonite", "freshSilicaSand": "Fresh Silica Sand",
             "lca": "LCA / Coal Dust", "water": "Water",
@@ -484,12 +481,11 @@ def run_check(config: dict, write_db: bool = False) -> None:
             label = _PLBLS.get(k, k)
             unit  = "ltr" if k == "water" else "kg"
             val   = f"{float(v):.3f} {unit}" if v is not None else "—"
-            print(f"    {label:<22}: {val}")
+            logger.info("    %-22s: %s", label, val)
     else:
-        print("  Current Prescription : No prescription found for this group/date/shift")
+        logger.info("  Current Prescription : No prescription found for this group/date/shift")
 
-    print()
-    print(SEP)
+    logger.info(SEP)
 
     if write_db:
         from .alert_db_writer import ensure_table, write_component_change_alert
@@ -508,5 +504,4 @@ def run_check(config: dict, write_db: bool = False) -> None:
         }
         written = write_component_change_alert(engine, result, fl_id,
                                                customer_pkey=config.get("customer_pkey", 0))
-        print(f"  Alert written to DB : {'YES' if written else 'NO (duplicate or error)'}")
-        print()
+        logger.info("  Alert written to DB : %s", "YES" if written else "NO (duplicate or error)")

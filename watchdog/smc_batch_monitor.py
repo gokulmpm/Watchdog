@@ -235,7 +235,13 @@ class SMCBatchMonitor:
         idle_min = int(cfg.get("idle_timeout_min",    0))
         last_new = time.time()
 
-        self._boot()
+        while True:
+            try:
+                self._boot()
+                break  # init succeeded
+            except Exception as _init_exc:
+                logger.warning("[%s] startup init failed: %s — retrying in 30s", self._label, _init_exc)
+                time.sleep(30)
 
         while True:
             try:

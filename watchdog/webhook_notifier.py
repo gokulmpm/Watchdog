@@ -66,9 +66,6 @@ _registered_types: set = set()
 # Separate registry for LCL/UCL property alerts
 _registered_lcl_ucl_types: set = set()
 
-# Track sent alert instances to avoid re-sending duplicates (same alert_id)
-_sent_alerts: set = set()
-
 # Unit lookup for prepared sand parameters
 _PS_UNITS: dict = {
     "moisture":               "%",

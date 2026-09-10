@@ -76,8 +76,14 @@ class PrescriptionWatchdog:
             )
             return
 
-        self._last_batch_pkey   = self._fetch_max_pkey()
-        self._current_component = self._fetch_current_component()
+        while True:
+            try:
+                self._last_batch_pkey   = self._fetch_max_pkey()
+                self._current_component = self._fetch_current_component()
+                break  # init succeeded
+            except Exception as _init_exc:
+                logger.warning("[%s] startup init failed: %s — retrying in 30s", self._label, _init_exc)
+                time.sleep(30)
         logger.info("[%s]  Starting from pkey=%d  component=%s",
                     self._label, self._last_batch_pkey, self._current_component or "(none)")
 
@@ -838,24 +844,24 @@ def run_check(config: dict, days: int = 7, write_db: bool = False) -> None:
             ).mappings().first()
         current_comp = str(row["component_id"]).strip() if row else ""
     except Exception as exc:
-        print(f"  WARNING: could not fetch current component: {exc}")
+        logger.info("  WARNING: could not fetch current component: %s", exc)
 
     if not current_comp:
-        print("  No active component found in additive table.")
+        logger.info("  No active component found in additive table.")
         return
 
     # -- Fetch prescription data for the last `days` days ----------------------
     end_date   = date.today()
     start_date = end_date - timedelta(days=days)
 
-    print(f"\n  Current Component : {current_comp}")
-    print(f"  Date range        : {start_date}  ->  {end_date}")
-    print(f"  Tolerance         : ±{tolerance_pct}%")
-    print(f"  Monitoring        : {', '.join(monitored)}\n")
+    logger.info("  Current Component : %s", current_comp)
+    logger.info("  Date range        : %s  ->  %s", start_date, end_date)
+    logger.info("  Tolerance         : ±%s%%", tolerance_pct)
+    logger.info("  Monitoring        : %s", ", ".join(monitored))
 
     df = fetch_prescription_data(config, start_date=start_date, end_date=end_date)
     if df.empty:
-        print("  No batches found for this date range.")
+        logger.info("  No batches found for this date range.")
         return
 
     # Filter to the current component only, then take the single last batch
@@ -863,7 +869,7 @@ def run_check(config: dict, days: int = 7, write_db: bool = False) -> None:
         df = df[df["Component ID"].astype(str).str.strip() == current_comp]
 
     if df.empty:
-        print(f"  No batches found for component {current_comp} in the last {days} days.")
+        logger.info("  No batches found for component %s in the last %d days.", current_comp, days)
         return
 
     # Keep only the last batch of the current component
@@ -883,29 +889,30 @@ def run_check(config: dict, days: int = 7, write_db: bool = False) -> None:
 
     row = df.iloc[0]
     batch_pkey = row.get("Batch pkey", "—")
-    print(SEP)
-    print(f"  Component : {current_comp}")
-    print(f"  Batch     : {batch_pkey}  |  {row.get('Date','')}  Shift {row.get('Shift','')}  "
-          f"|  Group: {row.get('Group','—')}")
-    print(SEP2)
-    print(f"  {'Parameter':<26}  {'Prescribed':>12}  {'Actual':>12}  {'Diff':>10}  {'%Diff':>8}  Status")
-    print(SEP2)
+    logger.info(SEP)
+    logger.info("  Component : %s", current_comp)
+    logger.info("  Batch     : %s  |  %s  Shift %s  |  Group: %s",
+                batch_pkey, row.get("Date", ""), row.get("Shift", ""), row.get("Group", "—"))
+    logger.info(SEP2)
+    logger.info("  %-26s  %12s  %12s  %10s  %8s  Status", "Parameter", "Prescribed", "Actual", "Diff", "%Diff")
+    logger.info(SEP2)
 
     if skip_zero and _all_actuals_zero(row, monitored):
-        print("  All actual values are zero — batch skipped.")
+        logger.info("  All actual values are zero — batch skipped.")
     else:
         deviations = _build_deviations_list(row, tolerance_pct, monitored)
         out_of_tol = [d for d in deviations if not d["within"]]
 
         for d in deviations:
             mark = " <--" if not d["within"] else ""
-            print(f"  {d['label']:<26}  {d['prescribed']:>12.3f}  {d['actual']:>12.3f}  "
-                  f"{d['diff']:>+10.3f}  {d['pct_diff']:>+7.2f}%  "
-                  f"{'DEVIATION' if not d['within'] else 'OK'}{mark}")
+            logger.info("  %-26s  %12.3f  %12.3f  %+10.3f  %+7.2f%%  %s%s",
+                        d["label"], d["prescribed"], d["actual"], d["diff"], d["pct_diff"],
+                        "DEVIATION" if not d["within"] else "OK", mark)
 
-        print(SEP2)
+        logger.info(SEP2)
         status = "DEVIATION FOUND" if out_of_tol else "ALL WITHIN TOLERANCE"
-        print(f"\n  Result: {status}  ({len(out_of_tol)} deviation(s) out of {len(deviations)} parameter(s))")
+        logger.info("  Result: %s  (%d deviation(s) out of %d parameter(s))",
+                    status, len(out_of_tol), len(deviations))
 
         if write_db and deviations:
             result = {
@@ -919,10 +926,9 @@ def run_check(config: dict, days: int = 7, write_db: bool = False) -> None:
             }
             rows_written = write_prescription_alert(eng, result, fl_id, tolerance_pct,
                                                      customer_pkey=config.get("customer_pkey", 0))
-            print(f"  Alert written to DB: {'YES' if rows_written else 'NO (duplicate or error)'}")
+            logger.info("  Alert written to DB: %s", "YES" if rows_written else "NO (duplicate or error)")
 
-    print(SEP)
-    print()
+    logger.info(SEP)
 
 if __name__ == "__main__":
     import argparse
