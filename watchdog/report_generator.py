@@ -172,7 +172,7 @@ def fetch_component_data(engine, foundry_line_id: int, component_id: str,
             WHERE a.foundry_line_id = :fl_id
               AND a.deleted = 0
               AND (a.component_id = :comp OR a.component_id = :comp2)
-              AND DATE(a.timestamp) = :dt
+              AND DATE(a.date) = :dt
               {shift_filter}
             ORDER BY a.pkey ASC
         """)

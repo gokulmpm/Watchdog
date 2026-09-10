@@ -54,6 +54,9 @@ class PrescriptionWatchdog:
         # changes each new shift — old keys never match new shift keys.
         self._alerted: set = set()   # {(component_id, date_str, shift_str, param)}
 
+        # Per-instance trend history: {(foundry_line_id, component_id, param): [pct_diff, ...]}
+        self._trend_history: dict = {}
+
     # -- Public ---------------------------------------------------------------
 
     def start(self) -> None:
@@ -231,6 +234,7 @@ class PrescriptionWatchdog:
                 setpoint_tolerance=setpoint_tolerance,
                 trend_window=trend_window,
                 trend_min_batches=trend_min,
+                trend_history=self._trend_history,
             )
             result = {
                 "pkey"        : row.get("Batch pkey"),
@@ -480,8 +484,7 @@ _THR_WARNING  = 3.0    # 1–3%     : WARNING
 _THR_CRITICAL = 6.0    # 3–6%     : CRITICAL
 # > 6%                 : CRITICAL (high)
 
-# In-memory trend tracker: {(foundry_line_id, component_id, param): [pct_diff, ...]}
-_TREND_HISTORY: dict = {}
+# trend_history moved to PrescriptionWatchdog.__init__ as self._trend_history
 
 
 def _fetch_analytics_prediction(config: dict, group_name: str,
@@ -551,7 +554,8 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
                             setpoint_monitoring: bool = True,
                             setpoint_tolerance: float = 0.5,
                             trend_window: int = 5,
-                            trend_min_batches: int = 3) -> list[dict]:
+                            trend_min_batches: int = 3,
+                            trend_history: dict = None) -> list[dict]:
     """
     Build per-parameter deviation dicts with two comparison types:
 
@@ -565,6 +569,8 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
         > 6%  -> critical_high
     """
     prediction = prediction or {}
+    if trend_history is None:
+        trend_history = {}
     deviations = []
 
     for param in monitored:
@@ -649,12 +655,12 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
 
             # Trend tracking: update history (cap total entries to prevent memory growth)
             trend_key = (fl_id, component_id, param)
-            if len(_TREND_HISTORY) > 2000:
+            if len(trend_history) > 2000:
                 # Evict oldest half when dict grows too large
-                keys = list(_TREND_HISTORY.keys())
+                keys = list(trend_history.keys())
                 for k in keys[:len(keys) // 2]:
-                    del _TREND_HISTORY[k]
-            hist = _TREND_HISTORY.setdefault(trend_key, [])
+                    del trend_history[k]
+            hist = trend_history.setdefault(trend_key, [])
             hist.append(pct_pred)
             if len(hist) > trend_window:
                 hist.pop(0)

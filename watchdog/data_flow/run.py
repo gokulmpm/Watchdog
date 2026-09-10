@@ -80,7 +80,7 @@ def start_data_flow_monitor(config: dict) -> None:
         # because all data flow tables live in the foundry DB
         monitor = DataFlowMonitor(
             foundry_engine  = foundry_engine,
-            registry_engine = foundry_engine,   # ← foundry DB, not sandman_dev
+            registry_engine = foundry_engine,   # data flow tables live in foundry DB; sandman_dev passed via _discovery_engine
             config          = config,
             _discovery_engine = registry_engine, # ← sandman_dev only for line discovery
         )

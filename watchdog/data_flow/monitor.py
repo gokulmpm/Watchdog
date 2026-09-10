@@ -94,6 +94,9 @@ class DataFlowMonitor:
         # Snooze registry — {line_id: snooze_until datetime}
         self._snoozed_until: dict[int, datetime] = {}
 
+        # Per-instance alert rate-limiter — {(line_id, source_name): last_fired_datetime}
+        self._last_alert_fired: dict[tuple, datetime] = {}
+
         # In-memory rhythm cache  {(line_id, source): thresholds_dict}
         self._rhythm_cache: dict[tuple, Optional[dict]] = {}
 
@@ -573,7 +576,6 @@ class DataFlowMonitor:
     # ── Alert firing ─────────────────────────────────────────────────────────
 
     # Track last alert time per (line, source) to avoid flooding
-    _last_alert_fired: dict[tuple, datetime] = {}
     ALERT_RESEND_HOURS = 1   # don't repeat same source alert for 1 hour
 
     def _fire_source_alert(
@@ -661,14 +663,67 @@ class DataFlowMonitor:
             f"until data resumes. Please investigate and restore the data connection.\n\n"
             f"@Sandman Team"
         )
-        self._send_email_alert(subject, body)
+        self._send_email_alert(subject, body, foundry_line_id=foundry_line_id)
         self._last_alert_fired[key] = datetime.now()
 
-    def _send_email_alert(self, subject: str, body: str) -> None:
-        """Send plain text data-flow alert email — filtered to DATA_FLOW recipients only."""
+    def _load_email_cfg(self, foundry_line_id: int = 0) -> dict:
+        """
+        Load email config for a specific foundry line from watchdog_si_config (sandman_dev).
+        Falls back to global config if the per-foundry config is missing or has no email section.
+        """
+        from watchdog.email_notifier import _get_email_cfg
+        global_email_cfg = _get_email_cfg(self._config)
+        if not foundry_line_id:
+            return global_email_cfg
+        try:
+            from watchdog.config_store import load_foundry_config
+            db_name = self._config.get("database", {}).get("name", "")
+
+            def _try_label(lbl: str) -> dict | None:
+                cfg = load_foundry_config(self._discovery_engine, lbl)
+                em  = _get_email_cfg(cfg)
+                df_recipients = [
+                    r for r in em.get("recipients", [])
+                    if "DATA_FLOW" in r.get("types", [])
+                ]
+                logger.debug(
+                    "[%s][line=%d] email cfg label=%s  enabled=%s  recipients=%d  data_flow_recipients=%d",
+                    self._label, foundry_line_id, lbl,
+                    em.get("enabled"), len(em.get("recipients", [])), len(df_recipients),
+                )
+                # If DATA_FLOW recipients are configured, always send regardless of enabled flag.
+                # Presence of recipients is explicit intent; the enabled toggle is a UI extra.
+                if df_recipients:
+                    return {**em, "enabled": True}
+                if em.get("enabled") is True and em.get("recipients"):
+                    return em
+                return None
+
+            # Try exact label first, then L1 fallback (dashboard defaults to line_id=1)
+            labels_to_try = [f"{db_name}_L{foundry_line_id}"]
+            if foundry_line_id != 1:
+                labels_to_try.append(f"{db_name}_L1")
+
+            for label in labels_to_try:
+                result = _try_label(label)
+                if result is not None:
+                    return result
+
+        except Exception as exc:
+            logger.warning("[%s][line=%d] could not load per-foundry email config: %s",
+                           self._label, foundry_line_id, exc)
+
+        logger.debug(
+            "[%s][line=%d] falling back to global email cfg  enabled=%s",
+            self._label, foundry_line_id, global_email_cfg.get("enabled"),
+        )
+        return global_email_cfg
+
+    def _send_email_alert(self, subject: str, body: str, foundry_line_id: int = 0) -> None:
+        """Send plain text data-flow alert email using per-foundry email config."""
         try:
             from watchdog.email_notifier import _get_email_cfg, _send_plain
-            email_cfg = _get_email_cfg(self._config)
+            email_cfg = self._load_email_cfg(foundry_line_id)
             if not email_cfg.get("enabled", False):
                 return
             _send_plain(email_cfg, subject, body, alert_type="DATA_FLOW")
@@ -696,7 +751,12 @@ class DataFlowMonitor:
             self._label, foundry_line_id
         )
 
-        dashboard_url = self._config.get("dashboard_url", "http://localhost:5055")
+        email_cfg     = self._load_email_cfg(foundry_line_id)
+        dashboard_url = (
+            email_cfg.get("dashboard_url")
+            or self._config.get("dashboard_url")
+            or ""
+        )
         db_name       = (self._config.get("database") or {}).get("name", "unknown")
 
         # Get customer name from customer_info table (short_name field)
@@ -871,7 +931,7 @@ class DataFlowMonitor:
         def links(items):
             parts = "  &nbsp;|&nbsp;  ".join(
                 f'<a href="{url}">{_esc(label)}</a>'
-                for (_, label, url) in items
+                for (kind, label, url) in items
             )
             html_parts.append(f"<p>&nbsp;&nbsp;&nbsp;&nbsp;{parts}</p>")
 
@@ -890,7 +950,7 @@ class DataFlowMonitor:
             rule()
             link_items = []
             for item in block:
-                if isinstance(item, tuple) and item[0] == "LINK":
+                if isinstance(item, tuple) and item[0] in ("LINK", "NOURL"):
                     link_items.append(item)
                 elif item == "":
                     blank()
@@ -910,11 +970,14 @@ class DataFlowMonitor:
         html_body = "".join(html_parts)
 
         try:
-            from watchdog.email_notifier import _get_email_cfg, _send_plain
-            email_cfg = _get_email_cfg(self._config)
             if not email_cfg.get("enabled", False):
+                logger.warning(
+                    "[%s][line=%d] email not enabled in config — confirmation skipped (check dashboard notifications for this line)",
+                    self._label, foundry_line_id,
+                )
                 return
-            _send_plain(email_cfg, subject, plain_body, alert_type="DATA_FLOW")
+            from watchdog.email_notifier import _send
+            _send(email_cfg, subject, html_body, alert_type="DATA_FLOW")
             self._confirmation_sent[foundry_line_id] = datetime.now()
             logger.info("[%s][line=%d] confirmation email sent", self._label, foundry_line_id)
         except Exception as exc:

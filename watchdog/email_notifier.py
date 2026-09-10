@@ -46,6 +46,9 @@ if not _email_logger.handlers:
     _email_logger.addHandler(_email_file_handler)
 _email_logger.propagate = False
 
+# ── Singleton engine for _dashboard_url_for_label DB lookup ──────────────────
+_DASH_ENGINE = None
+
 # ── Colour palette (matches Neubrutalism dashboard theme) ─────────────────────
 def _dashboard_url_for_label(email_cfg: dict, label: str) -> str:
     """
@@ -76,9 +79,9 @@ def _dashboard_url_for_label(email_cfg: dict, label: str) -> str:
 
     if db_name:
         try:
+            global _DASH_ENGINE
             import json as _j
             from sqlalchemy import create_engine as _ce, text as _t
-            import re as _re2
             # Try to load registry config from the same config file the main app uses
             import json, pathlib
             _cfg_path = pathlib.Path(__file__).parent / "config" / "watchdog_config.json"
@@ -89,18 +92,20 @@ def _dashboard_url_for_label(email_cfg: dict, label: str) -> str:
             _user = _rcfg.get("user", "root")
             _pw   = _rcfg.get("password", "")
             from urllib.parse import quote_plus as _qp
-            _eng = _ce(f"mysql+pymysql://{_qp(_user)}:{_qp(_pw)}@{_host}:{_port}/{_name}",
-                       pool_pre_ping=True)
-            row = _eng.connect().execute(_t("""
-                SELECT u.user_name
-                FROM   users     u
-                JOIN   customers c ON c.pkey = u.customer_pkey
-                WHERE  c.db_properties LIKE :pat
-                  AND  c.deleted = 0
-                  AND  u.deleted = 0
-                ORDER BY u.pkey ASC
-                LIMIT 1
-            """), {"pat": f"%{db_name}%"}).mappings().first()
+            if _DASH_ENGINE is None:
+                _DASH_ENGINE = _ce(f"mysql+pymysql://{_qp(_user)}:{_qp(_pw)}@{_host}:{_port}/{_name}",
+                                   pool_pre_ping=True)
+            with _DASH_ENGINE.connect() as conn:
+                row = conn.execute(_t("""
+                    SELECT u.user_name
+                    FROM   users     u
+                    JOIN   customers c ON c.pkey = u.customer_pkey
+                    WHERE  c.db_properties LIKE :pat
+                      AND  c.deleted = 0
+                      AND  u.deleted = 0
+                    ORDER BY u.pkey ASC
+                    LIMIT 1
+                """), {"pat": f"%{db_name}%"}).mappings().first()
             if row and row["user_name"]:
                 return f"{base}?user={row['user_name']}"
         except Exception:
@@ -144,7 +149,7 @@ def send_alerts_batch_email(alerts: list, config: dict, label: str = "") -> bool
     import re as _re
 
     email_cfg = _get_email_cfg(config)
-    if not email_cfg.get("enabled", False):
+    if not _is_enabled(email_cfg, "BAD_BATCH"):
         return False
     if not alerts:
         return False
@@ -312,7 +317,7 @@ def send_alerts_batch_email(alerts: list, config: dict, label: str = "") -> bool
             dashboard_url=_dashboard_url_for_label(email_cfg, label),
         )
 
-        _send(email_cfg, subject, html, alert_type="BATCH")
+        _send(email_cfg, subject, html, alert_type="BAD_BATCH")
         logger.info("[%s]  Batch alert email sent (%d alerts) -> %s",
                     label, len(alerts), ", ".join(_recipients(email_cfg)))
         return True
@@ -592,7 +597,7 @@ def _si_alert_body(date_str, shift, score_str, alert_level,
 
 def send_bad_batch_email(result: dict, config: dict, label: str = "") -> bool:
     """Send a plain-text Bad Batch alert email."""
-    email_cfg = _get_email_cfg(config)
+    email_cfg = _force_enabled_if_recipients(_get_email_cfg(config), "BAD_BATCH")
     if not _is_enabled(email_cfg, "BAD_BATCH"):
         return False
 
@@ -655,6 +660,187 @@ def send_bad_batch_email(result: dict, config: dict, label: str = "") -> bool:
 
     except Exception:
         logger.warning("[%s]  Bad-batch email FAILED:\n%s", label, traceback.format_exc())
+        return False
+
+
+def send_bad_batch_shift_summary(config: dict, date_str: str, shift: str,
+                                  total: int, bad: int, pct: float,
+                                  label: str = "") -> bool:
+    """Send end-of-shift bad batch summary email."""
+    email_cfg = _force_enabled_if_recipients(_get_email_cfg(config), "BAD_BATCH")
+    if not _is_enabled(email_cfg, "BAD_BATCH"):
+        return False
+
+    try:
+        _foundry = _get_foundry_line_name(config)
+
+        try:
+            date_fmt = datetime.strptime(date_str, "%Y-%m-%d").strftime("%d - %b - %Y")
+        except Exception:
+            date_fmt = date_str
+
+        ok_batches  = total - bad
+        ok_pct      = round(100.0 - pct, 1) if total > 0 else 0.0
+        bb_cfg      = config.get("bad_batch_watchdog", {})
+        ok_thr      = float(bb_cfg.get("pct_ok_thr", 1.0)) * 100   # e.g. 1.0 → 1.0%
+        status_line = "OK" if pct <= ok_thr else "BAD BATCH"
+
+        lines = [
+            "Bad Batch Shift Summary",
+            "",
+            f"Customer : {email_cfg.get('dashboard_user', '') or '-'}",
+        ]
+        if _foundry:
+            lines.append(f"Foundry  : {_foundry}")
+        lines += [
+            f"Date     : {date_fmt}",
+            "",
+            "=" * 52,
+            f"  {'Shift':<10}  {'Bad Batches':>12}  {'Total Batches':>14}",
+            "-" * 52,
+            f"  {shift:<10}  {bad:>10} ({pct:.1f}%)  {total:>14}",
+            "=" * 52,
+            "",
+            f"  OK Batches : {ok_batches} ({ok_pct:.1f}%)",
+            f"  Status     : {status_line}",
+            "",
+            "@Sandman Team",
+        ]
+        body    = "\n".join(lines)
+        subject = f"[SandMan] Shift {shift} Summary — {date_fmt} | {status_line} ({pct:.1f}% bad batches)"
+
+        _send_plain(email_cfg, subject, body, alert_type="BAD_BATCH")
+        logger.info("[%s]  Shift summary email sent — Shift %s  bad=%d/%d (%.1f%%)",
+                    label, shift, bad, total, pct)
+        return True
+
+    except Exception:
+        logger.warning("[%s]  send_bad_batch_shift_summary FAILED:\n%s", label, traceback.format_exc())
+        return False
+
+
+def send_bad_batch_daily_summary(config: dict, date_str: str,
+                                  rows: list, label: str = "") -> bool:
+    """
+    Send end-of-day bad batch summary email showing all shifts for the date.
+
+    rows: [{"shift": "A", "total": 100, "bad": 5, "pct": 5.0}, ...]
+    """
+    email_cfg = _force_enabled_if_recipients(_get_email_cfg(config), "BAD_BATCH")
+    if not _is_enabled(email_cfg, "BAD_BATCH"):
+        return False
+
+    try:
+        _foundry  = _get_foundry_line_name(config)
+        _customer = email_cfg.get("dashboard_user", "") or "-"
+
+        try:
+            date_fmt = datetime.strptime(date_str, "%Y-%m-%d").strftime("%d %b %Y")
+        except Exception:
+            date_fmt = date_str
+
+        grand_total = sum(r["total"] for r in rows)
+        grand_bad   = sum(r["bad"]   for r in rows)
+        grand_pct   = round(grand_bad / grand_total * 100, 1) if grand_total > 0 else 0.0
+        bb_cfg      = config.get("bad_batch_watchdog", {})
+        ok_thr      = float(bb_cfg.get("pct_ok_thr", 1.0)) * 100
+        status      = "OK" if grand_pct <= ok_thr else "BAD BATCH"
+
+        status_color = _C["sage"] if status == "OK" else _C["red"]
+        status_bg    = _C["sage_lt"] if status == "OK" else _C["red_lt"]
+
+        # ── Build shift rows ───────────────────────────────────────────────────
+        shift_rows_html = ""
+        for i, r in enumerate(rows):
+            bg  = "#ffffff" if i % 2 == 0 else "#f9f9f9"
+            pct = float(r["pct"])
+            bad = int(r["bad"])
+            tot = int(r["total"])
+            pct_color = _C["red"] if pct > ok_thr else _C["sage"]
+            shift_rows_html += f"""
+                <tr style="background:{bg};border-bottom:1px solid #e8e8e8">
+                  <td style="padding:10px 16px;font-size:13px;color:{_C['muted']};font-weight:600">{r['shift']}</td>
+                  <td style="padding:10px 16px;font-size:13px;text-align:right;color:{pct_color};font-weight:700">{pct:.1f}%</td>
+                  <td style="padding:10px 16px;font-size:13px;text-align:right;color:{_C['subtle']}">{bad}</td>
+                  <td style="padding:10px 16px;font-size:13px;text-align:right;color:{_C['subtle']}">{tot}</td>
+                </tr>"""
+
+        subject = (
+            f"[SandMan] Bad Batch Daily Summary — {date_fmt} | "
+            f"{status} ({grand_pct:.1f}%,  {grand_bad}/{grand_total} batches)"
+        )
+
+        html = f"""<!DOCTYPE html>
+<html><body style="margin:0;padding:0;background:#f0ede6;font-family:Arial,sans-serif">
+<div style="max-width:560px;margin:32px auto;background:#ffffff;border-radius:6px;
+            border:1px solid #d0ccc4;overflow:hidden">
+
+  <!-- Header -->
+  <div style="background:{_C['ink']};padding:18px 24px">
+    <div style="font-size:11px;letter-spacing:2px;color:#aaaaaa;text-transform:uppercase;margin-bottom:4px">SandMan AI Watchdog</div>
+    <div style="font-size:18px;font-weight:700;color:#ffffff">Bad Batch Daily Summary</div>
+  </div>
+
+  <!-- Meta -->
+  <div style="padding:16px 24px 0;border-bottom:1px solid #eeeeee">
+    <table style="font-size:13px;color:{_C['muted']};line-height:1.8;border-collapse:collapse">
+      <tr><td style="padding-right:16px;color:{_C['subtle']}">Date</td>
+          <td style="font-weight:600">{date_fmt}</td></tr>
+      {'<tr><td style="padding-right:16px;color:' + _C['subtle'] + '">Foundry</td><td style="font-weight:600">' + _foundry + '</td></tr>' if _foundry else ''}
+      <tr><td style="padding-right:16px;color:{_C['subtle']}">Customer</td>
+          <td style="font-weight:600">{_customer}</td></tr>
+    </table>
+  </div>
+
+  <!-- Table -->
+  <div style="padding:16px 24px">
+    <table width="100%" cellpadding="0" cellspacing="0"
+           style="border-collapse:collapse;border:1px solid #e0e0e0;border-radius:4px;overflow:hidden">
+      <!-- Header -->
+      <thead>
+        <tr style="background:{_C['ink']}">
+          <th style="padding:10px 16px;font-size:11px;color:#ffffff;text-align:left;font-weight:600;letter-spacing:0.5px">SHIFT</th>
+          <th style="padding:10px 16px;font-size:11px;color:#ffffff;text-align:right;font-weight:600;letter-spacing:0.5px">BAD %</th>
+          <th style="padding:10px 16px;font-size:11px;color:#ffffff;text-align:right;font-weight:600;letter-spacing:0.5px">BAD</th>
+          <th style="padding:10px 16px;font-size:11px;color:#ffffff;text-align:right;font-weight:600;letter-spacing:0.5px">TOTAL</th>
+        </tr>
+      </thead>
+      <tbody>{shift_rows_html}
+        <!-- Total row -->
+        <tr style="background:#f0f0f0;border-top:2px solid {_C['border']}">
+          <td style="padding:11px 16px;font-size:13px;font-weight:700;color:{_C['ink']}">TOTAL</td>
+          <td style="padding:11px 16px;font-size:13px;font-weight:700;text-align:right;color:{status_color}">{grand_pct:.1f}%</td>
+          <td style="padding:11px 16px;font-size:13px;font-weight:700;text-align:right;color:{_C['ink']}">{grand_bad}</td>
+          <td style="padding:11px 16px;font-size:13px;font-weight:700;text-align:right;color:{_C['ink']}">{grand_total}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Status badge -->
+  <div style="padding:0 24px 20px">
+    <div style="display:inline-block;background:{status_bg};border:1px solid {status_color};
+                border-radius:4px;padding:8px 18px;font-size:13px;font-weight:700;color:{status_color}">
+      Status : {status}
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div style="background:#f5f5f5;border-top:1px solid #e0e0e0;padding:12px 24px;
+              font-size:11px;color:{_C['subtle']};text-align:center">
+    @Sandman Team
+  </div>
+
+</div>
+</body></html>"""
+
+        _send(email_cfg, subject, html, alert_type="BAD_BATCH")
+        logger.info("[%s]  Daily summary email sent — %s  bad=%d/%d (%.1f%%)",
+                    label, date_str, grand_bad, grand_total, grand_pct)
+        return True
+
+    except Exception:
+        logger.warning("[%s]  send_bad_batch_daily_summary FAILED:\n%s", label, traceback.format_exc())
         return False
 
 
@@ -1023,7 +1209,7 @@ def send_combined_alert_email(bb_result: dict, presc_result: dict,
                                label: str = "") -> bool:
     """Send a plain-text Combined Alert (Bad Batch + Prescription) email."""
     email_cfg = _get_email_cfg(config)
-    if not email_cfg.get("enabled", False):
+    if not _is_enabled(email_cfg, "COMBINED"):
         return False
 
     try:
@@ -1147,7 +1333,7 @@ def check_and_send_combined(engine, config: dict, component_id: str,
     Returns True if combined email was sent.
     """
     email_cfg = _get_email_cfg(config)
-    if not email_cfg.get("enabled", False):
+    if not _is_enabled(email_cfg, "COMBINED"):
         return False
 
     try:
@@ -1724,6 +1910,19 @@ def _get_foundry_line_name(config: dict) -> str:
         return ""
 
 
+def _force_enabled_if_recipients(email_cfg: dict, alert_type: str) -> dict:
+    """If enabled=False but recipients exist for this alert_type, return a copy with enabled=True."""
+    if email_cfg.get("enabled", False):
+        return email_cfg
+    typed_recipients = [
+        r for r in email_cfg.get("recipients", [])
+        if alert_type in r.get("types", [])
+    ]
+    if typed_recipients:
+        return {**email_cfg, "enabled": True}
+    return email_cfg
+
+
 def _is_enabled(email_cfg: dict, alert_type: str) -> bool:
     if not email_cfg.get("enabled", False):
         _email_logger.debug("SKIPPED  type=%-16s  reason=email disabled in config", alert_type)
@@ -1753,17 +1952,23 @@ def _recipients(email_cfg: dict, alert_type: str = "") -> list:
     """
     recipients = email_cfg.get("recipients", [])
     if recipients:
-        result = []
+        all_emails = []
+        typed_emails = []
         for r in recipients:
             email = str(r.get("email", "")).strip()
             if not email:
                 continue
+            all_emails.append(email)
             if alert_type:
                 if alert_type in r.get("types", []):
-                    result.append(email)
+                    typed_emails.append(email)
             else:
-                result.append(email)
-        return result
+                typed_emails.append(email)
+        # If alert_type provided but no recipient has it configured, send to all.
+        # This handles system-level types (DATA_FLOW) that pre-date per-recipient config.
+        if alert_type and not typed_emails:
+            return all_emails
+        return typed_emails
 
     # ── Legacy fallback ────────────────────────────────────────────────────────
     addrs = email_cfg.get("to_addresses", [])
@@ -1772,7 +1977,10 @@ def _recipients(email_cfg: dict, alert_type: str = "") -> list:
     else:
         addrs = [str(a).strip() for a in addrs if str(a).strip()]
     if alert_type:
-        allowed = email_cfg.get("alert_types", [])
+        # DATA_FLOW and other system types not in alert_types default → send to all
+        _default_types = {"BAD_BATCH", "PRESCRIPTION", "SI", "SMC_BATCH",
+                          "SIEVE_CHANGE", "COMBINED", "DATA_FLOW"}
+        allowed = set(email_cfg.get("alert_types", _default_types))
         if allowed and alert_type not in allowed:
             return []
     return addrs

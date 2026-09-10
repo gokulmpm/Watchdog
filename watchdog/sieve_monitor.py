@@ -325,11 +325,13 @@ class SieveChangeMonitor:
         from .pipeline.db_connector import get_engine
         from sqlalchemy import text
 
+        fl_id = int(self._config.get("foundry_line_id", 1))
         try:
             engine = get_engine(self._config)
             with engine.connect() as conn:
                 row = conn.execute(
-                    text("SELECT COALESCE(MAX(`pkey`), 0) AS max_id FROM `sieves`")
+                    text("SELECT COALESCE(MAX(`pkey`), 0) AS max_id FROM `sieves` WHERE `foundry_line_id` = :fl_id"),
+                    {"fl_id": fl_id},
                 ).mappings().first()
             return int(row["max_id"]) if row else 0
         except Exception as exc:

@@ -1421,20 +1421,20 @@ input[type=range]::-moz-range-thumb {
         </div>
         <!-- Mode toggle pills -->
         <div style="display:flex;gap:8px;margin-bottom:16px">
-          <button type="button" id="bbwModeAbs" onclick="bbwToggleMode('absolute')"
+          <button type="button" id="bbwModeDb" onclick="bbwToggleMode('db')"
             style="flex:1;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;
                    border:2px solid #1f497d;background:#1f497d;color:#fff;transition:.15s">
-            ± Difference
+            DB Config
           </button>
           <button type="button" id="bbwModePct" onclick="bbwToggleMode('percentage')"
             style="flex:1;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;
                    border:2px solid #ddd;background:#fff;color:#888;transition:.15s">
             % Band
           </button>
-          <input type="hidden" id="bbwDetectionMode" value="absolute"/>
+          <input type="hidden" id="bbwDetectionMode" value="db"/>
         </div>
         <div id="bbwModeNote" style="font-size:11px;color:#888;margin-bottom:12px;font-style:italic">
-          Alert when |SMC − COSP| exceeds threshold
+          Severity limits loaded from foundry DB (smc_badbatch_config) per line
         </div>
 
         <div class="pw-grid">
@@ -1445,15 +1445,36 @@ input[type=range]::-moz-range-thumb {
               <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 3a1 1 0 0 1 1 1v3a1 1 0 0 1-2 0V5a1 1 0 0 1 1-1zm0 7a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/></svg>
               Severity Thresholds
             </div>
-            <!-- Absolute mode -->
-            <div id="bbwAbsThrs">
-              <div class="pw-row"><div class="pw-label"><span class="sev-chip sev-ok"><span class="sev-dot"></span>OK</span> up to</div>
-                <div class="pw-ctrl"><input type="number" id="bbwWatchThr" min="0.1" max="50" step="0.1" value="1.0" style="width:64px"/><span class="unit">units</span></div></div>
-              <div class="pw-row"><div class="pw-label"><span class="sev-chip sev-warn"><span class="sev-dot"></span>Warning</span> up to</div>
-                <div class="pw-ctrl"><input type="number" id="bbwAlertThr" min="0.1" max="50" step="0.1" value="2.0" style="width:64px"/><span class="unit">units</span></div></div>
-              <div class="pw-row"><div class="pw-label"><span class="sev-chip sev-crit"><span class="sev-dot"></span>Critical</span> above</div>
-                <div class="pw-ctrl"><input type="number" id="bbwCriticalThr" min="0.1" max="50" step="0.1" value="3.0" style="width:64px"/><span class="unit">units</span></div></div>
-              <input type="hidden" id="bbwThreshold" value="2.0"/>
+            <!-- DB Config mode — limits fetched read-only from smc_badbatch_config -->
+            <div id="bbwDbInfo">
+              <div id="bbwDbLimitsLoading" style="padding:16px 0;text-align:center;color:#aaa;font-size:12px">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#aaa" stroke-width="2" style="display:block;margin:0 auto 6px;animation:sp 1s linear infinite">
+                  <circle cx="12" cy="12" r="9" stroke-dasharray="28 56"/>
+                </svg>
+                Loading limits from DB…
+              </div>
+              <div id="bbwDbLimitsTable" style="display:none;font-size:12px">
+                <!-- Positive deviation (SMC > COSP) -->
+                <div style="font-size:10px;font-weight:700;color:#1f497d;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">SMC &gt; COSP (over-discharge)</div>
+                <div class="pw-row"><div class="pw-label"><span class="sev-chip sev-ok"><span class="sev-dot"></span>OK</span></div>
+                  <div class="pw-ctrl" style="color:#555">diff &lt; <strong id="bbwDbUpWatch">—</strong> units</div></div>
+                <div class="pw-row"><div class="pw-label"><span class="sev-chip sev-warn"><span class="sev-dot"></span>Warning</span></div>
+                  <div class="pw-ctrl" style="color:#555"><strong id="bbwDbUpWatch2">—</strong> – <strong id="bbwDbUpAlert">—</strong> units</div></div>
+                <div class="pw-row"><div class="pw-label"><span class="sev-chip sev-crit"><span class="sev-dot"></span>Critical</span></div>
+                  <div class="pw-ctrl" style="color:#555">≥ <strong id="bbwDbUpCrit">—</strong> units</div></div>
+                <!-- Negative deviation (SMC < COSP) -->
+                <div style="font-size:10px;font-weight:700;color:#c0392b;text-transform:uppercase;letter-spacing:.5px;margin:12px 0 6px">SMC &lt; COSP (under-discharge)</div>
+                <div class="pw-row"><div class="pw-label"><span class="sev-chip sev-ok"><span class="sev-dot"></span>OK</span></div>
+                  <div class="pw-ctrl" style="color:#555">diff &gt; <strong id="bbwDbLoWatchMax">—</strong> units</div></div>
+                <div class="pw-row"><div class="pw-label"><span class="sev-chip sev-warn"><span class="sev-dot"></span>Warning</span></div>
+                  <div class="pw-ctrl" style="color:#555"><strong id="bbwDbLoAlertMax">—</strong> – <strong id="bbwDbLoWatchMin">—</strong> units</div></div>
+                <div class="pw-row"><div class="pw-label"><span class="sev-chip sev-crit"><span class="sev-dot"></span>Critical</span></div>
+                  <div class="pw-ctrl" style="color:#555">≤ <strong id="bbwDbLoCrit">—</strong> units</div></div>
+                <div id="bbwDbSmcRange" style="font-size:10px;color:#aaa;margin-top:10px;padding-top:8px;border-top:1px solid #eee"></div>
+              </div>
+              <div id="bbwDbLimitsError" style="display:none;padding:12px 0;text-align:center;color:#c0392b;font-size:12px">
+                No config found in smc_badbatch_config for this foundry line.
+              </div>
             </div>
             <!-- % Band mode — user enters %, stored as decimal -->
             <div id="bbwPctThrs" style="display:none">
@@ -1484,7 +1505,7 @@ input[type=range]::-moz-range-thumb {
             <div class="pw-row"><div class="pw-label">Idle timeout</div>
               <div class="pw-ctrl"><input type="number" id="bbwIdle" min="0" max="1440" value="0" style="width:64px"/><span class="unit">min</span></div></div>
             <div style="font-size:10px;color:#aaa;margin-top:10px;padding-top:8px;border-top:1px solid #eee">
-              Production Report always uses absolute difference
+              DB mode: change limits in smc_badbatch_config per foundry line
             </div>
           </div>
 
@@ -1493,23 +1514,59 @@ input[type=range]::-moz-range-thumb {
       <script>
       function bbwToggleMode(mode) {
         document.getElementById('bbwDetectionMode').value = mode;
-        document.getElementById('bbwAbsThrs').style.display  = mode === 'absolute'   ? '' : 'none';
-        document.getElementById('bbwPctThrs').style.display  = mode === 'percentage' ? '' : 'none';
+        const dbInfo  = document.getElementById('bbwDbInfo');
+        const pctThrs = document.getElementById('bbwPctThrs');
+        if (dbInfo)  dbInfo.style.display  = mode === 'db'         ? '' : 'none';
+        if (pctThrs) pctThrs.style.display = mode === 'percentage' ? '' : 'none';
         document.getElementById('bbwModeNote').textContent =
           mode === 'percentage'
-            ? 'Alert when SMC is outside COSP × (1 ± factor)'
-            : 'Alert when |SMC − COSP| exceeds threshold (absolute difference)';
+            ? 'Alert when |SMC − COSP| / COSP exceeds % threshold'
+            : 'Severity limits from foundry DB (smc_badbatch_config) — read only';
         // Style the toggle pills
-        const absBtn = document.getElementById('bbwModeAbs');
+        const dbBtn  = document.getElementById('bbwModeDb');
         const pctBtn = document.getElementById('bbwModePct');
-        if (absBtn && pctBtn) {
-          absBtn.style.background  = mode === 'absolute'   ? '#1f497d' : '#fff';
-          absBtn.style.color       = mode === 'absolute'   ? '#fff'    : '#888';
-          absBtn.style.borderColor = mode === 'absolute'   ? '#1f497d' : '#ddd';
-          pctBtn.style.background  = mode === 'percentage' ? '#1f497d' : '#fff';
-          pctBtn.style.color       = mode === 'percentage' ? '#fff'    : '#888';
-          pctBtn.style.borderColor = mode === 'percentage' ? '#1f497d' : '#ddd';
+        if (dbBtn && pctBtn) {
+          const isDb  = mode === 'db';
+          const isPct = mode === 'percentage';
+          dbBtn.style.background   = isDb  ? '#1f497d' : '#fff';
+          dbBtn.style.color        = isDb  ? '#fff'    : '#888';
+          dbBtn.style.borderColor  = isDb  ? '#1f497d' : '#ddd';
+          pctBtn.style.background  = isPct ? '#1f497d' : '#fff';
+          pctBtn.style.color       = isPct ? '#fff'    : '#888';
+          pctBtn.style.borderColor = isPct ? '#1f497d' : '#ddd';
         }
+        // Fetch DB limits when switching to DB mode
+        if (mode === 'db') bbwLoadDbLimits();
+      }
+
+      function bbwLoadDbLimits() {
+        const loading = document.getElementById('bbwDbLimitsLoading');
+        const table   = document.getElementById('bbwDbLimitsTable');
+        const errBox  = document.getElementById('bbwDbLimitsError');
+        if (!loading) return;
+        loading.style.display = ''; table.style.display = 'none'; errBox.style.display = 'none';
+
+        const lineId = (typeof _bbwLineId !== 'undefined' ? _bbwLineId : 1);
+        fetch('/api/config/badbatch-db-limits?line_id=' + lineId)
+          .then(r => r.json())
+          .then(d => {
+            loading.style.display = 'none';
+            if (!d.found) { errBox.style.display = ''; return; }
+            const s = id => document.getElementById(id);
+            s('bbwDbUpWatch').textContent   = d.upper.watch;
+            s('bbwDbUpWatch2').textContent  = d.upper.watch;
+            s('bbwDbUpAlert').textContent   = d.upper.alert;
+            s('bbwDbUpCrit').textContent    = d.upper.critical;
+            s('bbwDbLoWatchMax').textContent = d.lower.watch_max;
+            s('bbwDbLoAlertMax').textContent = d.lower.alert_max;
+            s('bbwDbLoWatchMin').textContent = d.lower.watch_min;
+            s('bbwDbLoCrit').textContent     = d.lower.critical_max;
+            const rng = s('bbwDbSmcRange');
+            if (rng && d.smc_min != null && d.smc_max != null)
+              rng.textContent = 'Valid SMC range: ' + d.smc_min + ' – ' + d.smc_max;
+            table.style.display = '';
+          })
+          .catch(() => { loading.style.display = 'none'; errBox.style.display = ''; });
       }
       </script>
 
@@ -2368,7 +2425,9 @@ function collectOptimalValues(psCols) {
   return result;
 }
 
+let _bbwLineId = 1;  // tracks current foundry_line_id for DB limit fetch
 function fillMonitor(cfg) {
+  _bbwLineId = cfg.foundry_line_id || 1;
   // Monitoring active toggle
   const monCb = document.getElementById('monitoringEnabled');
   if (monCb) {
@@ -2489,14 +2548,10 @@ function fillPrescription(cfg, availParams) {
   const bbwOn = bbw.enabled === true;
   document.getElementById('bbwEnable').checked = bbwOn;
   document.getElementById('bbwEnableLbl').textContent = bbwOn ? 'On' : 'Off';
-  sv('bbwThreshold',   bbw.threshold          ?? 2.0);
-  sv('bbwWatchThr',    bbw.watch_thr          ?? 1.0);
-  sv('bbwAlertThr',    bbw.alert_thr          ?? 2.0);
-  sv('bbwCriticalThr', bbw.critical_thr       ?? 3.0);
   sv('bbwPctOkThr',    Math.round((bbw.pct_ok_thr        ?? 0.02) * 1000) / 10);
   sv('bbwPctWarnThr',  Math.round((bbw.pct_warn_thr      ?? 0.05) * 1000) / 10);
   sv('bbwPctCritThr',  Math.round((bbw.pct_critical_thr  ?? 0.10) * 1000) / 10);
-  bbwToggleMode(bbw.detection_mode || 'absolute');
+  bbwToggleMode(bbw.detection_mode || 'db');
   sdd('bbwSmcCol',     bbw.smc_col            ?? 'compactability_smc_pct');
   sdd('bbwCospCol',    bbw.cosp_col          ?? 'cosp_percentage_pct');
   sv('bbwPoll',        bbw.poll_interval_sec ?? 30);
@@ -2960,11 +3015,7 @@ async function save() {
     },
     bad_batch_watchdog:{
       enabled:           document.getElementById('bbwEnable').checked,
-      detection_mode:    gv('bbwDetectionMode') || 'absolute',
-      threshold:         parseFloat(gv('bbwThreshold'))  ||2.0,
-      watch_thr:         parseFloat(gv('bbwWatchThr'))   ||1.0,
-      alert_thr:         parseFloat(gv('bbwAlertThr'))   ||2.0,
-      critical_thr:      parseFloat(gv('bbwCriticalThr'))||3.0,
+      detection_mode:    gv('bbwDetectionMode') || 'db',
       pct_ok_thr:        (parseFloat(gv('bbwPctOkThr'))   ||2)  / 100,
       pct_warn_thr:      (parseFloat(gv('bbwPctWarnThr')) ||5)  / 100,
       pct_critical_thr:  (parseFloat(gv('bbwPctCritThr')) ||10) / 100,

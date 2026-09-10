@@ -42,6 +42,9 @@ class PredictionMonitor:
         self._alerted:      set  = set()
         self._alerted_date: date = date.today()
 
+        from .pipeline.db_connector import get_engine
+        self._engine = get_engine(self._config)
+
     # ── Entry point ───────────────────────────────────────────────────────────
 
     def start(self) -> None:
@@ -116,7 +119,6 @@ class PredictionMonitor:
         Parse shift timings from customer_foundry_info for this customer.
         Returns list of dicts with shift id, start_dt, end_dt, shift_date.
         """
-        from .pipeline.db_connector import get_engine
         customer_pkey = int(self._config.get("customer_pkey", 0))
         if not customer_pkey:
             return []
@@ -128,7 +130,7 @@ class PredictionMonitor:
             ORDER  BY pkey DESC LIMIT 1
         """)
         try:
-            engine = get_engine(self._config)
+            engine = self._engine
             with engine.connect() as conn:
                 row = conn.execute(sql, {"cpkey": customer_pkey}).mappings().first()
             if not row or not row["shift"] or not row["shift_timings"]:
@@ -199,8 +201,11 @@ class PredictionMonitor:
         Only groups with hide_for_non_admin = 0 are monitored —
         hidden groups are internal/admin-only and do not have regular predictions.
         """
-        from .pipeline.db_connector import get_engine
-        fl_id = int(self._config.get("foundry_line_id", 1))
+        fl_id = self._config.get("foundry_line_id")
+        if fl_id is None:
+            logger.warning("[%s]  foundry_line_id missing from config — defaulting to 1", self._label)
+            fl_id = 1
+        fl_id = int(fl_id)
         sql = text("""
             SELECT name
             FROM   foundry_line_group
@@ -210,7 +215,7 @@ class PredictionMonitor:
             ORDER  BY pkey
         """)
         try:
-            engine = get_engine(self._config)
+            engine = self._engine
             with engine.connect() as conn:
                 rows = conn.execute(sql, {"fl_id": fl_id}).fetchall()
             # Only named groups — skip NULL/empty (no-group) batches
@@ -223,8 +228,11 @@ class PredictionMonitor:
     def _prediction_exists(self, shift_date: date, shift_id: str,
                             group_name: Optional[str]) -> bool:
         """Check if analytics_report has a row for (date, shift, group, line)."""
-        from .pipeline.db_connector import get_engine
-        fl_id = int(self._config.get("foundry_line_id", 1))
+        fl_id = self._config.get("foundry_line_id")
+        if fl_id is None:
+            logger.warning("[%s]  foundry_line_id missing from config — defaulting to 1", self._label)
+            fl_id = 1
+        fl_id = int(fl_id)
 
         if group_name is None:
             sql = text("""
@@ -247,7 +255,7 @@ class PredictionMonitor:
                 LIMIT  1
             """)
         try:
-            engine = get_engine(self._config)
+            engine = self._engine
             with engine.connect() as conn:
                 params = {"fl_id": fl_id, "dt": str(shift_date), "sh": shift_id}
                 if group_name is not None:
@@ -307,11 +315,11 @@ class PredictionMonitor:
 
     def _send_email(self, subject: str, body: str) -> None:
         try:
-            from watchdog.email_notifier import _send_plain, _get_email_cfg
+            from watchdog.email_notifier import _send_plain, _get_email_cfg, _is_enabled
             email_cfg = _get_email_cfg(self._config)
-            if not email_cfg.get("enabled", False):
+            if not _is_enabled(email_cfg, "PRESCRIPTION"):
                 return
-            _send_plain(email_cfg, subject, body, alert_type="PREDICTION_MISSING")
+            _send_plain(email_cfg, subject, body, alert_type="PRESCRIPTION")
             logger.info("[%s]  Prediction missing email sent: %s", self._label, subject)
         except Exception as exc:
             logger.warning("[%s]  Email failed: %s", self._label, exc)
@@ -331,7 +339,11 @@ class PredictionMonitor:
             if not _severity_passes(cfg, "Warning"):
                 return
 
-            fl_id       = int(self._config.get("foundry_line_id", 1))
+            fl_id = self._config.get("foundry_line_id")
+            if fl_id is None:
+                logger.warning("[%s]  foundry_line_id missing from config — defaulting to 1", self._label)
+                fl_id = 1
+            fl_id       = int(fl_id)
             foundry_key = str(self._config.get("customer_pkey", ""))
             alert_name  = f"Missing Prediction — {group_display}"
             type_key    = f"prediction::{group_display}"

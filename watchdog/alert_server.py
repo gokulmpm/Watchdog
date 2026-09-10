@@ -515,6 +515,43 @@ def get_foundry_line_names():
         return jsonify({}), 200   # non-fatal -- UI will fall back to "Line N"
 
 
+@app.route("/api/config/badbatch-db-limits")
+def get_badbatch_db_limits():
+    """
+    Return the smc_badbatch_config thresholds for the current foundry line.
+    Used by the config dashboard to show read-only DB limits in the Bad Batch panel.
+    """
+    from .pipeline.db_connector import get_engine
+    line_id = int(request.args.get("line_id", _config.get("foundry_line_id", 1)))
+    try:
+        engine = get_engine(_config)
+        thr = _fetch_badbatch_thresholds(engine, line_id)
+        if thr is None:
+            return jsonify({"found": False}), 200
+        u = thr["upper_raw"]
+        l = thr["lower_raw"]
+        return jsonify({
+            "found": True,
+            "upper": {
+                "watch":    u["lowUpperMin"],
+                "alert":    u["modUpperMin"],
+                "critical": u["criticUpperMin"],
+            },
+            "lower": {
+                "watch_min":    l["lowLowerMin"],
+                "watch_max":    l["lowLowerMax"],
+                "alert_min":    l["modLowerMin"],
+                "alert_max":    l["modLowerMax"],
+                "critical_max": l["criticLowerMax"],
+            },
+            "smc_min": thr.get("smc_min"),
+            "smc_max": thr.get("smc_max"),
+        })
+    except Exception as exc:
+        logger.error("get_badbatch_db_limits failed: %s", exc)
+        return jsonify({"found": False, "error": str(exc)}), 200
+
+
 @app.route("/api/config/foundry-param-names")
 def get_foundry_param_names():
     """
@@ -1553,11 +1590,21 @@ def get_notifications():
         cfg    = _foundry_cfg(db_name, line_id)
         engine = _get_engine_for(cfg)
         # Merge DB-stored foundry config (has email/notifications settings from Config UI)
-        if _reg_engine:
+        if not _reg_engine:
+            logger.warning(
+                "[notifications]  registry engine unavailable — cannot load per-foundry "
+                "notifications config for %s_L%s", db_name, line_id,
+            )
+        else:
             from .config_store import load_foundry_config as _lfc
             _db_fc = _lfc(_reg_engine, f"{db_name}_L{line_id}")
             if _db_fc.get("notifications"):
                 cfg = {**cfg, "notifications": _db_fc["notifications"]}
+            else:
+                logger.warning(
+                    "[notifications]  no notifications key in DB config for %s_L%s "
+                    "— email settings from local config will be used", db_name, line_id,
+                )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -2661,7 +2708,7 @@ def list_components():
         if not date_str or date_str == "last":
             with engine.connect() as conn:
                 row = conn.execute(text("""
-                    SELECT DATE(MAX(timestamp)) AS last_date FROM additive
+                    SELECT DATE(MAX(`date`)) AS last_date FROM additive
                     WHERE foundry_line_id=:fl_id AND deleted=0
                       AND component_id IS NOT NULL AND component_id != ''
                 """), {"fl_id": line_id}).mappings().first()
@@ -2675,10 +2722,10 @@ def list_components():
             # We detect contiguous runs in Python so the same component appearing
             # again after a different component counts as a separate production run.
             if date_from and date_to:
-                date_sql   = "DATE(timestamp) BETWEEN :dt_from AND :dt_to"
+                date_sql   = "DATE(`date`) BETWEEN :dt_from AND :dt_to"
                 date_params = {"fl_id": line_id, "dt_from": date_from, "dt_to": date_to}
             else:
-                date_sql   = "DATE(timestamp) = :dt"
+                date_sql   = "DATE(`date`) = :dt"
                 date_params = {"fl_id": line_id, "dt": date_str}
 
             rows = conn.execute(text(f"""
@@ -3335,7 +3382,7 @@ def data_flow_annotate():
     """
     line_id     = request.args.get("line", type=int) or request.form.get("line", type=int)
     status      = (request.args.get("status") or request.form.get("status", "")).strip()
-    source_name = (request.args.get("source") or request.form.get("source", "all")).strip()
+    source_name = (request.args.get("source") or request.form.get("source", "all")).strip().replace("-", "_")
 
     if not line_id or status not in ("data_issue", "snooze"):
         return "<h2>Invalid link</h2>", 400
@@ -3456,7 +3503,7 @@ def data_flow_confirm():
     annotation_type = ANNOTATION_MAP.get(status)
     confirmed_by    = request.args.get("user", "dashboard")
     user_notes      = request.args.get("notes", "").strip()
-    source_name     = request.args.get("source", "all").strip()
+    source_name     = request.args.get("source", "all").strip().replace("-", "_")
     db_name         = request.args.get("db", "").strip()
     now_str         = datetime.now().strftime("%d %b %Y %H:%M")
 

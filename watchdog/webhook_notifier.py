@@ -552,6 +552,96 @@ def send_lcl_ucl_alerts(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  BAD BATCH DAILY SUMMARY WEBHOOK
+# ══════════════════════════════════════════════════════════════════════════════
+
+def send_bad_batch_daily_webhook(
+    config:   dict,
+    date_str: str,
+    rows:     list,
+    label:    str = "",
+) -> bool:
+    """
+    POST a bad-batch end-of-day shift-wise summary to /api/sandman/alert-summary.
+
+    Uses a dedicated summary route — NOT /alert or /alert-type.
+    Fires at day boundary regardless of severity filter (bypasses _severity_passes).
+    Requires webhook.enabled=true AND webhook.send_bad_batch=true.
+
+    rows: list of {shift, total, bad, pct} dicts for the completed date.
+    """
+    cfg = _get_cfg(config)
+    if not cfg.get("enabled", False):
+        logger.debug("[%s]  daily summary webhook skipped — webhook disabled", label)
+        return False
+    if not cfg.get("send_bad_batch", False):
+        logger.debug("[%s]  daily summary webhook skipped — send_bad_batch=false", label)
+        return False
+    if not rows:
+        return False
+
+    try:
+        foundry_key  = str(config.get("customer_pkey", ""))
+        line_pkey    = int(config.get("foundry_line_id", 1))
+        bb_cfg       = config.get("bad_batch_watchdog", {})
+        ok_thr       = float(bb_cfg.get("pct_ok_thr", 1.0)) * 100
+        triggered_at = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+
+        grand_total = sum(r["total"] for r in rows)
+        grand_bad   = sum(r["bad"]   for r in rows)
+        grand_pct   = round(grand_bad / grand_total * 100, 1) if grand_total > 0 else 0.0
+        status      = "OK" if grand_pct <= ok_thr else "BAD BATCH"
+
+        # Build shift-wise payload rows with resolved shift names
+        shift_data = []
+        for r in rows:
+            shift_data.append({
+                "shift"      : _shift_name(cfg, r["shift"]),
+                "total"      : int(r["total"]),
+                "bad"        : int(r["bad"]),
+                "bad_pct"    : float(r["pct"]),
+            })
+
+        payload = {
+            "foundry_key"  : foundry_key,
+            "line_pkey"    : line_pkey,
+            "date"         : date_str,
+            "triggered_at" : triggered_at,
+            "grand_total"  : grand_total,
+            "grand_bad"    : grand_bad,
+            "grand_pct"    : grand_pct,
+            "status"       : status,
+            "shifts"       : shift_data,
+        }
+
+        base    = str(cfg.get("base_url", "")).rstrip("/")
+        timeout = int(cfg.get("timeout_sec", 10))
+        url     = f"{base}/api/sandman/alert-summary"
+
+        resp = requests.post(url, json=payload, timeout=timeout)
+        resp.raise_for_status()
+
+        logger.info(
+            "[%s]  Daily summary webhook sent — %s  bad=%d/%d (%.1f%%)  status=%s  HTTP=%s",
+            label, date_str, grand_bad, grand_total, grand_pct, status, resp.status_code,
+        )
+        _api_logger.info(
+            "POST /alert-summary  STATUS=%s  date=%s  foundry=%s  line=%s  bad=%d/%d (%.1f%%)  status=%s  url=%s",
+            resp.status_code, date_str, foundry_key, line_pkey,
+            grand_bad, grand_total, grand_pct, status, url,
+        )
+        return True
+
+    except Exception as exc:
+        logger.warning("[%s]  send_bad_batch_daily_webhook FAILED: %s", label, exc)
+        _api_logger.error(
+            "POST /alert-summary  STATUS=FAILED  date=%s  foundry=%s  error=%s",
+            date_str, config.get("customer_pkey", ""), exc,
+        )
+        return False
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  INTERNAL HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
 

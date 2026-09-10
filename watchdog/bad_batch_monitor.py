@@ -134,6 +134,16 @@ def _load_badbatch_thresholds(engine, foundry_line_id: int, config: dict = None)
 
         thr["smc_min"] = smc_min
         thr["smc_max"] = smc_max
+
+        # Read detection_mode from DB config JSON if present
+        try:
+            raw_crit = row.get("critical_config_json") or "{}"
+            db_meta  = json.loads(raw_crit) if isinstance(raw_crit, str) else (raw_crit or {})
+            if "detection_mode" in db_meta:
+                thr["detection_mode"] = str(db_meta["detection_mode"]).lower()
+        except Exception:
+            pass
+
         return thr
     except Exception as exc:
         logger.warning("_load_badbatch_thresholds failed (line=%d): %s", foundry_line_id, exc)
@@ -192,6 +202,8 @@ class BadBatchMonitor:
         self._label              = label
         self._last_batch_pkey    = 0
         self._current_component  = ""   # currently running component_id
+        self._current_shift      = ""   # shift currently being processed
+        self._current_date       = ""   # date currently being processed
 
     # -- Public ---------------------------------------------------------------
 
@@ -200,9 +212,12 @@ class BadBatchMonitor:
         bb_cfg          = self._config.get("bad_batch_watchdog", {})
         poll_sec        = int(bb_cfg.get("poll_interval_sec", 30))
         idle_timeout    = int(bb_cfg.get("idle_timeout_min",  0))
-        threshold       = float(bb_cfg.get("threshold", 2.0))
-        detection_mode  = str(bb_cfg.get("detection_mode", "absolute")).lower()
-        # Percentage-mode severity thresholds (% of COSP)
+        # detection_mode: "db" (default) = smc_badbatch_config signed-diff bands
+        #                 "percentage"   = % of COSP (set point) — watchdog config thresholds
+        detection_mode  = str(bb_cfg.get("detection_mode", "db")).lower()
+        if detection_mode not in ("db", "percentage"):
+            detection_mode = "db"
+        # % mode thresholds (only used when detection_mode="percentage")
         pct_ok_thr      = float(bb_cfg.get("pct_ok_thr",       1.0))
         pct_warn_thr    = float(bb_cfg.get("pct_warn_thr",      3.0))
         pct_crit_thr    = float(bb_cfg.get("pct_critical_thr",  5.0))
@@ -211,9 +226,9 @@ class BadBatchMonitor:
 
         logger.info(
             "[%s]  Bad-batch monitor starting  "
-            "(poll=%ds  mode=%s  config_threshold=±%.2f  smc_col=%s  cosp_col=%s  "
-            "— DB thresholds used if smc_badbatch_config row exists for this line)",
-            self._label, poll_sec, detection_mode, threshold, smc_col, cosp_col,
+            "(poll=%ds  mode=%s  smc_col=%s  cosp_col=%s  "
+            "— db=smc_badbatch_config signed-diff  percentage=%%COSP bands)",
+            self._label, poll_sec, detection_mode, smc_col, cosp_col,
         )
 
         self._last_batch_pkey   = self._fetch_max_pkey()
@@ -225,7 +240,7 @@ class BadBatchMonitor:
 
         while True:
             try:
-                new_alerts = self._poll(threshold, smc_col, cosp_col,
+                new_alerts = self._poll(smc_col, cosp_col,
                                         detection_mode=detection_mode,
                                         pct_ok_thr=pct_ok_thr,
                                         pct_warn_thr=pct_warn_thr,
@@ -251,8 +266,8 @@ class BadBatchMonitor:
 
     # -- Private ---------------------------------------------------------------
 
-    def _poll(self, threshold: float, smc_col: str, cosp_col: str,
-              detection_mode: str = "absolute",
+    def _poll(self, smc_col: str, cosp_col: str,
+              detection_mode: str = "db",
               pct_ok_thr: float = 1.0,
               pct_warn_thr: float = 3.0,
               pct_crit_thr: float = 5.0) -> int:
@@ -263,24 +278,26 @@ class BadBatchMonitor:
         engine = get_engine(self._config)
         ensure_table(engine)
 
-        # ── Two-model threshold resolution ────────────────────────────────────
-        # Priority 1 (DB): smc_badbatch_config table — detailed signed upper/lower bounds
-        # Priority 2 (Config fallback): bad_batch_watchdog watch_thr/alert_thr/critical_thr
+        # ── Threshold resolution ───────────────────────────────────────────────
+        # Two modes only — no watchdog absolute difference thresholds:
+        #   "db"         → signed-difference bands from smc_badbatch_config (foundry DB)
+        #   "percentage" → |SMC − COSP| / COSP × 100 vs watchdog config % thresholds
         bb_cfg = self._config.get("bad_batch_watchdog", {})
 
-        thr = _load_badbatch_thresholds(engine, fl_id, config=self._config)
-
-        if thr is None:
-            # No DB row for this foundry line — fall back to config thresholds
-            abs_ok_thr   = float(bb_cfg.get("abs_ok_thr",   bb_cfg.get("watch_thr",    threshold * 0.5)))
-            abs_warn_thr = float(bb_cfg.get("abs_warn_thr",  bb_cfg.get("alert_thr",   threshold)))
-            abs_crit_thr = float(bb_cfg.get("abs_crit_thr",  bb_cfg.get("critical_thr",threshold * 1.5)))
-            logger.debug("[%s]  BB thresholds: Config UI (bad_batch_watchdog)  ok≤%.2f  warn≤%.2f  crit>%.2f",
-                         self._label, abs_ok_thr, abs_warn_thr, abs_crit_thr)
+        if detection_mode == "percentage":
+            thr = None
+            logger.debug("[%s]  BB mode: %% band  ok<%.1f%%  warn<%.1f%%  crit>=%.1f%%",
+                         self._label, pct_ok_thr, pct_warn_thr, pct_crit_thr)
         else:
-            abs_ok_thr = abs_warn_thr = abs_crit_thr = 0.0  # unused when DB model is active
-            logger.debug("[%s]  BB thresholds: DB (smc_badbatch_config)  min_trigger=%.2f  smc=[%.1f,%.1f]",
-                         self._label, thr["min_trigger"], thr.get("smc_min", 0.0), thr.get("smc_max", 100.0))
+            # DB signed-difference — always the default; no fallback to watchdog thresholds
+            thr = _load_badbatch_thresholds(engine, fl_id, config=self._config)
+            if thr is not None:
+                logger.debug("[%s]  BB mode: DB signed-difference  min_trigger=%.2f  smc=[%.1f,%.1f]",
+                             self._label, thr["min_trigger"], thr.get("smc_min", 0.0), thr.get("smc_max", 100.0))
+            else:
+                logger.warning("[%s]  No smc_badbatch_config row for foundry_line_id=%d — "
+                               "skipping bad batch poll", self._label, fl_id)
+                return 0
 
         smc_min = thr.get("smc_min", 0.0)   if thr else 0.0
         smc_max = thr.get("smc_max", 100.0) if thr else 100.0
@@ -334,20 +351,10 @@ class BadBatchMonitor:
                 else:
                     severity = "critical"
             else:
-                if thr is not None:
-                    # Model 1 — DB (smc_badbatch_config): detailed signed upper/lower bounds
-                    severity = _deviation_severity(diff, thr)
-                    if severity == "ok":
-                        continue
-                else:
-                    # Model 2 — Config UI (bad_batch_watchdog): simple 3-tier
-                    abs_diff = abs(diff)
-                    if abs_diff <= abs_ok_thr:
-                        continue
-                    elif abs_diff <= abs_warn_thr:
-                        severity = "warning"
-                    else:
-                        severity = "critical"
+                # DB mode — signed-diff bands from smc_badbatch_config
+                severity = _deviation_severity(diff, thr)
+                if severity == "ok":
+                    continue
 
             result = {
                 "batch_pkey"     : int(row["pkey"]),
@@ -359,7 +366,6 @@ class BadBatchMonitor:
                 "smc_value"      : smc_val,
                 "cosp_value"     : cosp_val,
                 "smc_cosp_diff"  : diff,
-                "threshold"      : threshold,
                 "severity"       : severity,
                 "detection_mode" : detection_mode,
                 "pct_deviation"  : round(abs(diff / cosp_val * 100), 2) if cosp_val else None,
@@ -411,12 +417,173 @@ class BadBatchMonitor:
             except Exception as _email_exc:
                 logger.warning("[%s]  Bad-batch email failed: %s", self._label, _email_exc)
 
+        # ── Shift boundary detection — emit summary when shift changes ────────
+        # Use the last batch in this cycle to detect shift/date
+        last_row = batches.sort_values("pkey").iloc[-1] if not batches.empty else None
+        if last_row is not None:
+            new_shift = str(last_row.get("shift") or "")
+            new_date  = str(last_row.get("date")  or "")
+            prev_shift = self._current_shift
+            prev_date  = self._current_date
+
+            if prev_shift and (new_shift != prev_shift or new_date != prev_date):
+                # Shift boundary crossed — send summary for the completed shift
+                logger.info("[%s]  Shift boundary: %s/%s → %s/%s — sending summary",
+                            self._label, prev_date, prev_shift, new_date, new_shift)
+                try:
+                    self._send_shift_summary(engine, fl_id, prev_date, prev_shift)
+                except Exception as _se:
+                    logger.warning("[%s]  Shift summary email failed: %s", self._label, _se)
+
+                # Day boundary — send end-of-day summary for the completed date
+                if prev_date and new_date != prev_date:
+                    logger.info("[%s]  Day boundary: %s → %s — sending daily summary",
+                                self._label, prev_date, new_date)
+                    try:
+                        self._send_daily_summary(engine, fl_id, prev_date)
+                    except Exception as _de:
+                        logger.warning("[%s]  Daily summary email failed: %s", self._label, _de)
+
+            self._current_shift = new_shift
+            self._current_date  = new_date
+
         # Advance watermark only up to last fully-processed batch
         # (not max pkey) so null-value batches don't get permanently skipped
         processed_pkeys = batches["pkey"].dropna()
         if not processed_pkeys.empty:
             self._last_batch_pkey = int(processed_pkeys.max())
         return written
+
+    def _send_shift_summary(self, engine, fl_id: int, date_str: str, shift: str) -> None:
+        """Query bad batch counts for the completed shift and send a summary email."""
+        from sqlalchemy import text as _text
+
+        smc_col  = _safe_col(str(self._config.get("bad_batch_watchdog", {}).get("smc_col",  _SMC_DEFAULT)),  _SMC_DEFAULT)
+        cosp_col = _safe_col(str(self._config.get("bad_batch_watchdog", {}).get("cosp_col", _COSP_DEFAULT)), _COSP_DEFAULT)
+
+        try:
+            with engine.connect() as conn:
+                # Total batches with both SMC + COSP for this shift
+                total_row = conn.execute(_text(f"""
+                    SELECT COUNT(*) AS total
+                    FROM   `additive`
+                    WHERE  foundry_line_id = :fl
+                      AND  deleted = 0
+                      AND  DATE(`date`) = :dt
+                      AND  `shift`      = :sh
+                      AND  `{smc_col}`  IS NOT NULL
+                      AND  `{cosp_col}` IS NOT NULL
+                """), {"fl": fl_id, "dt": date_str, "sh": shift}).mappings().first()
+
+                # Bad batches recorded in watchdog_alerts for this shift
+                bad_row = conn.execute(_text("""
+                    SELECT COUNT(*) AS bad
+                    FROM   `watchdog_alerts`
+                    WHERE  foundry_line_id = :fl
+                      AND  alert_type      = 'BAD_BATCH'
+                      AND  `date`          = :dt
+                      AND  `shift`         = :sh
+                """), {"fl": fl_id, "dt": date_str, "sh": shift}).mappings().first()
+
+            total = int(total_row["total"]) if total_row else 0
+            bad   = int(bad_row["bad"])     if bad_row   else 0
+            pct   = round(bad / total * 100, 1) if total > 0 else 0.0
+
+        except Exception as exc:
+            logger.warning("[%s]  _send_shift_summary query failed: %s", self._label, exc)
+            return
+
+        try:
+            from .email_notifier import send_bad_batch_shift_summary
+            send_bad_batch_shift_summary(
+                config    = self._config,
+                date_str  = date_str,
+                shift     = shift,
+                total     = total,
+                bad       = bad,
+                pct       = pct,
+                label     = self._label,
+            )
+        except Exception as exc:
+            logger.warning("[%s]  send_bad_batch_shift_summary failed: %s", self._label, exc)
+
+    def _send_daily_summary(self, engine, fl_id: int, date_str: str) -> None:
+        """Query bad batch counts for every shift on date_str and send a daily summary email."""
+        if not self._config.get("bad_batch_watchdog", {}).get("enabled", False):
+            logger.debug("[%s]  Daily summary skipped — bad batch monitoring not enabled", self._label)
+            return
+
+        from sqlalchemy import text as _text
+
+        smc_col  = _safe_col(str(self._config.get("bad_batch_watchdog", {}).get("smc_col",  _SMC_DEFAULT)),  _SMC_DEFAULT)
+        cosp_col = _safe_col(str(self._config.get("bad_batch_watchdog", {}).get("cosp_col", _COSP_DEFAULT)), _COSP_DEFAULT)
+
+        try:
+            with engine.connect() as conn:
+                # Total batches per shift for the day
+                total_rows = conn.execute(_text(f"""
+                    SELECT `shift`, COUNT(*) AS total
+                    FROM   `additive`
+                    WHERE  foundry_line_id = :fl
+                      AND  deleted = 0
+                      AND  DATE(`date`) = :dt
+                      AND  `{smc_col}`  IS NOT NULL
+                      AND  `{cosp_col}` IS NOT NULL
+                    GROUP BY `shift`
+                    ORDER BY `shift`
+                """), {"fl": fl_id, "dt": date_str}).mappings().all()
+
+                # Bad batches per shift from watchdog_alerts
+                bad_rows = conn.execute(_text("""
+                    SELECT `shift`, COUNT(*) AS bad
+                    FROM   `watchdog_alerts`
+                    WHERE  foundry_line_id = :fl
+                      AND  alert_type      = 'BAD_BATCH'
+                      AND  `date`          = :dt
+                    GROUP BY `shift`
+                    ORDER BY `shift`
+                """), {"fl": fl_id, "dt": date_str}).mappings().all()
+
+            bad_by_shift   = {r["shift"]: int(r["bad"])   for r in bad_rows}
+            total_by_shift = {r["shift"]: int(r["total"]) for r in total_rows}
+            shifts         = sorted(set(list(bad_by_shift.keys()) + list(total_by_shift.keys())))
+
+            rows = []
+            for sh in shifts:
+                total = total_by_shift.get(sh, 0)
+                bad   = bad_by_shift.get(sh, 0)
+                pct   = round(bad / total * 100, 1) if total > 0 else 0.0
+                rows.append({"shift": sh, "total": total, "bad": bad, "pct": pct})
+
+        except Exception as exc:
+            logger.warning("[%s]  _send_daily_summary query failed: %s", self._label, exc)
+            return
+
+        if not rows:
+            logger.info("[%s]  Daily summary: no batch data for %s — skipping email", self._label, date_str)
+            return
+
+        try:
+            from .email_notifier import send_bad_batch_daily_summary
+            send_bad_batch_daily_summary(
+                config   = self._config,
+                date_str = date_str,
+                rows     = rows,
+                label    = self._label,
+            )
+        except Exception as exc:
+            logger.warning("[%s]  send_bad_batch_daily_summary failed: %s", self._label, exc)
+
+        try:
+            from .webhook_notifier import send_bad_batch_daily_webhook
+            send_bad_batch_daily_webhook(
+                config   = self._config,
+                date_str = date_str,
+                rows     = rows,
+                label    = self._label,
+            )
+        except Exception as exc:
+            logger.warning("[%s]  send_bad_batch_daily_webhook failed: %s", self._label, exc)
 
     def _send_webhook(self, result: dict) -> None:
         """Push bad-batch alert to the external push-notification API."""
