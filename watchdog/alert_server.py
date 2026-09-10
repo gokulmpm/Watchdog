@@ -636,7 +636,10 @@ def get_foundry_params():
 
     try:
         db_cfg = {**_config.get("database", {}), "name": db_name}
-        params = get_available_parameters(db_cfg, line_id)
+        # Pass per-foundry param_columns config so discovery uses the right column names
+        fc = (_config.get("foundry_configs") or {}).get(f"{db_name}_L{line_id}", {})
+        param_columns = fc.get("prescription_watchdog", {}).get("param_columns", {})
+        params = get_available_parameters(db_cfg, line_id, param_columns=param_columns)
         return jsonify(params)
     except Exception as exc:
         logger.error("get_foundry_params failed: %s", exc)
@@ -1090,6 +1093,8 @@ def save_foundry_config():
                 "poll_interval_sec"  : int(pw.get("poll_interval_sec",     30)),
                 "idle_timeout_min"   : int(pw.get("idle_timeout_min",      60)),
                 "skip_zero_batches"  : bool(pw.get("skip_zero_batches",    True)),
+                "param_thresholds"   : dict(pw.get("param_thresholds",    {})),
+                "param_columns"      : dict(pw.get("param_columns",       {})),
             }
 
         if "component_change_watchdog" in data:

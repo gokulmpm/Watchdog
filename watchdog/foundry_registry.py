@@ -592,7 +592,7 @@ _INFRA_COLS = frozenset({
     "no_of_moulds", "no_of_castings",
 })
 
-def get_available_parameters(db_cfg: dict, foundry_line_id: int) -> dict:
+def get_available_parameters(db_cfg: dict, foundry_line_id: int, param_columns: dict = None) -> dict:
     """
     Return all parameter columns that have at least one non-NULL value for
     the given foundry line.
@@ -666,19 +666,31 @@ def get_available_parameters(db_cfg: dict, foundry_line_id: int) -> dict:
                 return []
 
         # -- Prescription params: only include columns with actual non-zero data --
-        _PRESC_CANDIDATES = [
-            {"key": "bentonite",       "label": "Bentonite",         "column": "bentonite_actual"},
-            {"key": "freshSilicaSand", "label": "Fresh Silica Sand", "column": "fss_actual"},
-            {"key": "lca",             "label": "LCA / Coal Dust",   "column": "coal_dust_actual"},
-            {"key": "water",           "label": "Water",             "column": "water_actual"},
+        _PRESC_DEFAULTS = [
+            {"key": "bentonite",       "label": "Bentonite",         "actual_col": "bentonite_actual",  "setpoint_col": "bentonite_set_point"},
+            {"key": "freshSilicaSand", "label": "Fresh Silica Sand", "actual_col": "fss_actual",        "setpoint_col": "fss_set_point"},
+            {"key": "lca",             "label": "LCA / Coal Dust",   "actual_col": "coal_dust_actual",  "setpoint_col": "coal_dust_set_point"},
+            {"key": "water",           "label": "Water",             "actual_col": "water_actual",      "setpoint_col": "water_set_point"},
         ]
+        # Apply per-foundry column overrides from param_columns config
+        _pc = param_columns or {}
+        _PRESC_CANDIDATES = []
+        for _d in _PRESC_DEFAULTS:
+            _ov = _pc.get(_d["key"], {})
+            _PRESC_CANDIDATES.append({
+                "key"         : _d["key"],
+                "label"       : _ov.get("label")       or _d["label"],
+                "actual_col"  : _ov.get("actual_col")  or _d["actual_col"],
+                "setpoint_col": _ov.get("setpoint_col") or _d["setpoint_col"],
+                "column"      : _ov.get("actual_col")  or _d["actual_col"],
+            })
 
         def _prescription_params() -> list:
             if not _table_exists("additive"):
                 return []
             available = []
             for p in _PRESC_CANDIDATES:
-                col = p["column"]
+                col = p["actual_col"]
                 try:
                     row = conn.execute(text(
                         f"SELECT 1 FROM `additive` "

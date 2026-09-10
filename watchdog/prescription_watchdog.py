@@ -116,12 +116,14 @@ class PrescriptionWatchdog:
                 watch_thr        = float(pw_cfg["watch_thr"])
                 critical_thr     = float(pw_cfg["critical_thr"])
                 param_thresholds = dict(pw_cfg.get("param_thresholds") or {})
+                param_columns    = dict(pw_cfg.get("param_columns")    or {})
 
                 new_rows = self._poll_new_batches(tolerance_pct, skip_zero,
                                                   watch_thr, critical_thr,
                                                   setpoint_monitor, setpoint_tolerance,
                                                   trend_window, trend_min,
-                                                  param_thresholds=param_thresholds)
+                                                  param_thresholds=param_thresholds,
+                                                  param_columns=param_columns)
 
                 if new_rows > 0:
                     last_new_batch_time = datetime.now()
@@ -154,7 +156,8 @@ class PrescriptionWatchdog:
                           setpoint_tolerance: float = 0.5,
                           trend_window: int = 5,
                           trend_min: int = 3,
-                          param_thresholds: dict = None) -> int:
+                          param_thresholds: dict = None,
+                          param_columns: dict = None) -> int:
         """Fetch batches newer than last_batch_pkey for the current component only."""
         from .pipeline.data_fetcher import fetch_prescription_data, fetch_prescription_data_scada
         from .pipeline.db_connector import get_engine
@@ -250,6 +253,7 @@ class PrescriptionWatchdog:
                 setpoint_tolerance=setpoint_tolerance,
                 trend_window=trend_window,
                 param_thresholds=param_thresholds,
+                param_columns=param_columns,
                 trend_min_batches=trend_min,
                 trend_history=self._trend_history,
             )
@@ -616,7 +620,8 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
         _warn_thr  = float(_pthr.get("warn_thr",  watch_thr))
         _crit_thr  = float(_pthr.get("crit_thr",  critical_thr))
 
-        actual_col = _PARAM_TO_ACTUAL_COL.get(param)
+        _pc        = (param_columns or {}).get(param, {})
+        actual_col = _pc.get("actual_col") or _PARAM_TO_ACTUAL_COL.get(param)
         actual_raw = row.get(actual_col) if (actual_col and actual_col in row.index) \
                      else row.get(f"{param} Actual")
         try:
@@ -659,7 +664,7 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
             })
             continue
 
-        sp_col   = _PARAM_TO_SETPOINT_COL.get(param)
+        sp_col   = _pc.get("setpoint_col") or _PARAM_TO_SETPOINT_COL.get(param)
         sp_raw   = row.get(sp_col) if (sp_col and sp_col in row.index) else None
         setpoint = None
         if sp_raw is not None:

@@ -2492,22 +2492,35 @@ function renderPrescriptionParams(availParams, monitored, cfg) {
     </div>`;
   const pw         = (cfg || {}).prescription_watchdog || {};
   const pthr       = pw.param_thresholds || {};
+  const pcols      = pw.param_columns    || {};
   const globalOk   = pw.tolerance_pct ?? 1.0;
   const globalWarn = pw.watch_thr      ?? 3.0;
   const globalCrit = pw.critical_thr   ?? 6.0;
   for (const p of availParams) {
     const chk  = monitored.has(p.key) ? 'checked' : '';
     const pt   = pthr[p.key] || {};
-    const okV  = pt.ok_thr   ?? globalOk;
-    const wV   = pt.warn_thr ?? globalWarn;
-    const cV   = pt.crit_thr ?? globalCrit;
-    h += `<div class="prow" style="flex-wrap:wrap;gap:4px 0">
+    const pc   = pcols[p.key] || {};
+    const okV  = pt.ok_thr        ?? globalOk;
+    const wV   = pt.warn_thr      ?? globalWarn;
+    const cV   = pt.crit_thr      ?? globalCrit;
+    const actV = pc.actual_col    || p.actual_col  || p.column || '';
+    const spV  = pc.setpoint_col  || p.setpoint_col || '';
+    h += `<div class="prow" style="flex-wrap:wrap;gap:4px 0;border-bottom:1px solid #eee;padding-bottom:6px;margin-bottom:2px">
       <div style="display:flex;align-items:center;gap:8px;width:100%">
         <input type="checkbox" class="pw-param" value="${p.key}" id="pw_${p.key}" ${chk} onchange="pwSyncAll()"/>
-        <label class="prow-name" for="pw_${p.key}" style="flex:1">${p.label}</label>
-        <span class="prow-col">${p.column}</span>
+        <label class="prow-name" for="pw_${p.key}" style="flex:1;font-weight:600">${p.label}</label>
       </div>
-      <div style="display:flex;gap:6px;align-items:center;padding-left:28px;font-size:11px;color:#666;flex-wrap:wrap">
+      <div style="display:flex;gap:6px;align-items:center;padding-left:28px;font-size:11px;color:#555;flex-wrap:wrap;margin-top:4px">
+        <span style="color:#444;min-width:72px">Actual col:</span>
+        <input type="text" class="pw-pcol" data-key="${p.key}" data-col="actual_col"
+               value="${actV}" placeholder="e.g. bentonite_actual"
+               style="flex:1;min-width:140px;padding:3px 6px;font-size:11px;border:1px solid #ccc;border-radius:3px;font-family:monospace"/>
+        <span style="color:#444;min-width:72px;margin-left:8px">Setpoint col:</span>
+        <input type="text" class="pw-pcol" data-key="${p.key}" data-col="setpoint_col"
+               value="${spV}" placeholder="e.g. bentonite_set_point"
+               style="flex:1;min-width:140px;padding:3px 6px;font-size:11px;border:1px solid #ccc;border-radius:3px;font-family:monospace"/>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;padding-left:28px;font-size:11px;color:#666;flex-wrap:wrap;margin-top:4px">
         <span style="color:#2d7a4f;font-weight:600">OK ≤</span>
         <input type="number" class="pw-pthr" data-key="${p.key}" data-thr="ok_thr"
                min="0.1" max="50" step="0.1" value="${okV}"
@@ -3021,10 +3034,14 @@ async function save() {
              day_end_hour:+gv('trHour')||6,day_end_minute:+gv('trMin')||0,
              window_n:+gv('trWinN')||1,skip_additive:document.getElementById('trSkip').checked},
     prescription_watchdog:(()=>{
-      const pthr = {};
+      const pthr = {}, pcols = {};
       document.querySelectorAll('.pw-pthr').forEach(inp => {
         const k = inp.dataset.key, t = inp.dataset.thr, v = parseFloat(inp.value);
         if (k && t && !isNaN(v)) { pthr[k] = pthr[k] || {}; pthr[k][t] = v; }
+      });
+      document.querySelectorAll('.pw-pcol').forEach(inp => {
+        const k = inp.dataset.key, c = inp.dataset.col, v = inp.value.trim();
+        if (k && c && v) { pcols[k] = pcols[k] || {}; pcols[k][c] = v; }
       });
       return {
         enabled:             document.getElementById('pwEnable').checked,
@@ -3041,6 +3058,7 @@ async function save() {
         idle_timeout_min:    (v=>Number.isFinite(v)?v:60)(parseInt(gv('pwIdle'))),
         skip_zero_batches:   document.getElementById('pwSkipZero').checked,
         param_thresholds:    pthr,
+        param_columns:       pcols,
       };
     })(),
     component_change_watchdog:{
