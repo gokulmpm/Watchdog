@@ -756,10 +756,17 @@ def main() -> None:
                    level=getattr(logging, args.log_level))
 
     try:
-        from .config_store import get_registry_engine, ensure_config_table, load_all_configs
+        from .config_store import (
+            get_registry_engine, ensure_config_table,
+            seed_foundry_configs, load_all_configs,
+        )
         _reg = get_registry_engine(base_config)
         if _reg:
             ensure_config_table(_reg)
+            seeded = seed_foundry_configs(_reg, base_config.get("foundry_configs", {}))
+            if seeded:
+                logging.getLogger(__name__).info(
+                    "Seeded default config for %d new foundry line(s)", seeded)
             base_config["foundry_configs"] = load_all_configs(_reg)
             logging.getLogger(__name__).info(
                 "Per-foundry configs loaded from DB: %d foundry line(s)",
@@ -869,11 +876,14 @@ def main() -> None:
 
     logger.info("Starting %d monitor thread(s)...", len(entries))
     threads = []
+    # label -> (thread, FoundrySIMonitor) — used for live config reload
+    _running_monitors: dict = {}
     for label, cfg in entries:
         monitor = FoundrySIMonitor(config=cfg, label=label)
         t = threading.Thread(target=monitor.start, name=f"watchdog-{label}", daemon=True)
         t.start()
         threads.append(t)
+        _running_monitors[label] = (t, monitor)
         logger.info("  Started: %s", label)
 
     # ── Data Flow Monitor — ONE instance per unique foundry DB ───────────────
@@ -922,6 +932,7 @@ def main() -> None:
     # os.execv replaces this process with a fresh copy — same PID, all memory freed.
     import os as _os
     _start_time = datetime.now()
+    _cfg_reload_since = datetime.now()   # only reload configs changed after this
     _MAX_RUNTIME_SEC = 24 * 3600   # 24 hours
 
     try:
@@ -939,11 +950,46 @@ def main() -> None:
                     "Auto-restart after %.0f h — freeing accumulated memory",
                     uptime / 3600,
                 )
-                # Must use -m to preserve package context for relative imports.
-                # sys.argv[0] is the file path when launched with -m, not the module name.
                 _module = (__spec__ and __spec__.name) or "watchdog.run_alert_monitor"
                 _os.execv(sys.executable, [sys.executable, "-m", _module])
-                # execv replaces the process — code below never runs
+
+            # ── Live config reload — runs every 60 s ─────────────────────────
+            # 1. Pull fresh per-foundry configs from DB and update running
+            #    monitors in-place.  All sub-monitors (prescription, sieve,
+            #    bad_batch, …) share the same dict reference, so they pick up
+            #    the new thresholds on their next poll cycle automatically.
+            # 2. Discover newly enabled foundries and start them without a
+            #    full restart.
+            if _reg:
+                try:
+                    from .config_store import load_all_configs
+                    fresh_configs = load_all_configs(_reg, since=_cfg_reload_since)
+                    _cfg_reload_since = datetime.now()
+
+                    # Update existing monitor configs in-place
+                    for _lbl, (_t, _mon) in list(_running_monitors.items()):
+                        if _lbl in fresh_configs:
+                            _mon._config.update(fresh_configs[_lbl])
+
+                    # Discover any newly enabled foundries
+                    from .foundry_registry import expand_all_foundries
+                    base_config["foundry_configs"].update(fresh_configs)
+                    all_entries = expand_all_foundries(base_config)
+                    for _lbl, _cfg in all_entries:
+                        if _lbl not in _running_monitors or \
+                                not _running_monitors[_lbl][0].is_alive():
+                            logger.info("Auto-starting newly enabled foundry: %s", _lbl)
+                            _mon = FoundrySIMonitor(config=_cfg, label=_lbl)
+                            _t = threading.Thread(
+                                target=_mon.start,
+                                name=f"watchdog-{_lbl}",
+                                daemon=True,
+                            )
+                            _t.start()
+                            threads.append(_t)
+                            _running_monitors[_lbl] = (_t, _mon)
+                except Exception as _reload_exc:
+                    logger.warning("Live config reload failed: %s", _reload_exc)
 
             time.sleep(60)
 

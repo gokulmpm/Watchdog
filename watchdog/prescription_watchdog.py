@@ -61,22 +61,13 @@ class PrescriptionWatchdog:
 
     def start(self) -> None:
         """Run forever (call from a daemon thread)."""
-        pw_cfg        = self._config.get("prescription_watchdog", {})
-        poll_sec      = int(pw_cfg.get("poll_interval_sec", 30))
-        idle_timeout  = int(pw_cfg.get("idle_timeout_min",  60))
-        tolerance_pct = float(pw_cfg.get("tolerance_pct", 1.0))
-        skip_zero     = bool(pw_cfg.get("skip_zero_batches", True))
-        watch_thr     = float(pw_cfg.get("watch_thr",    1.0))
-        alert_thr     = float(pw_cfg.get("alert_thr",    3.0))
-        critical_thr      = float(pw_cfg.get("critical_thr",      6.0))
-        setpoint_monitor      = bool(pw_cfg.get("setpoint_monitoring",      True))
-        setpoint_tolerance    = float(pw_cfg.get("setpoint_tolerance",    0.5))
-        trend_window          = int(pw_cfg.get("trend_window",            5))
-        trend_min             = int(pw_cfg.get("trend_min_batches",       3))
+        pw_cfg       = self._config.get("prescription_watchdog", {})
+        poll_sec     = int(pw_cfg.get("poll_interval_sec", 30))
+        idle_timeout = int(pw_cfg.get("idle_timeout_min",  60))
 
         logger.info(
-            "[%s]  Prescription monitor starting  (poll=%ds  idle_timeout=%dmin  tol=?%.1f%%)",
-            self._label, poll_sec, idle_timeout, tolerance_pct,
+            "[%s]  Prescription monitor starting  (poll=%ds  idle_timeout=%dmin)",
+            self._label, poll_sec, idle_timeout,
         )
 
         # Check whether this foundry line has SCADA data
@@ -100,8 +91,30 @@ class PrescriptionWatchdog:
 
         while True:
             try:
+                # Re-read all config values each cycle — picks up live DB updates
+                pw_cfg             = self._config.get("prescription_watchdog", {})
+                skip_zero          = bool(pw_cfg.get("skip_zero_batches", True))
+                setpoint_monitor   = bool(pw_cfg.get("setpoint_monitoring",  True))
+                setpoint_tolerance = float(pw_cfg.get("setpoint_tolerance",  0.5))
+                trend_window       = int(pw_cfg.get("trend_window",          5))
+                trend_min          = int(pw_cfg.get("trend_min_batches",     3))
+
+                _missing = [k for k in ("tolerance_pct", "watch_thr", "critical_thr")
+                            if pw_cfg.get(k) is None]
+                if _missing:
+                    logger.warning(
+                        "[%s]  Skipping poll — missing thresholds in DB config: %s",
+                        self._label, _missing,
+                    )
+                    time.sleep(poll_sec)
+                    continue
+
+                tolerance_pct = float(pw_cfg["tolerance_pct"])
+                watch_thr     = float(pw_cfg["watch_thr"])
+                critical_thr  = float(pw_cfg["critical_thr"])
+
                 new_rows = self._poll_new_batches(tolerance_pct, skip_zero,
-                                                  watch_thr, alert_thr, critical_thr,
+                                                  watch_thr, critical_thr,
                                                   setpoint_monitor, setpoint_tolerance,
                                                   trend_window, trend_min)
 
@@ -132,7 +145,7 @@ class PrescriptionWatchdog:
     # -- Private ---------------------------------------------------------------
 
     def _poll_new_batches(self, tolerance_pct: float, skip_zero: bool,
-                          watch_thr: float = 1.0, alert_thr: float = 2.0,
+                          watch_thr: float = 1.0,
                           critical_thr: float = 3.0,
                           setpoint_monitor: bool = True,
                           setpoint_tolerance: float = 0.5,
@@ -226,7 +239,7 @@ class PrescriptionWatchdog:
             # ── Build deviations using upper = pred*(1+tol/100), lower = pred*(1-tol/100)
             deviations = _build_deviations_list(
                 row, tolerance_pct, monitored, prediction,
-                watch_thr=watch_thr, alert_thr=alert_thr,
+                watch_thr=watch_thr,
                 critical_thr=critical_thr,
                 fl_id=fl_id,
                 component_id=str(row.get("Component ID", "") or ""),
@@ -251,15 +264,15 @@ class PrescriptionWatchdog:
             if n > 0:
                 try:
                     from .email_notifier import send_prescription_email, check_and_send_combined
-                    critical_devs = [d for d in deviations
-                                     if str(d.get("severity","")).lower() in ("critical","critical_high")]
-                    if critical_devs:
+                    alert_devs = [d for d in deviations
+                                  if str(d.get("severity","")).lower() in ("warning","critical")]
+                    if alert_devs:
                         # Deduplicate — only alert once per (component, date, shift, param)
                         comp_id   = str(result.get("component_id", ""))
                         date_str  = str(result.get("date", ""))
                         shift_str = str(result.get("shift", ""))
                         new_devs  = [
-                            d for d in critical_devs
+                            d for d in alert_devs
                             if (comp_id, date_str, shift_str, d.get("param",""))
                                not in self._alerted
                         ]
@@ -289,19 +302,25 @@ class PrescriptionWatchdog:
 
         return rows_written
 
-    def _send_prescription_webhook(self, critical_devs: list, result: dict) -> None:
+    def _send_prescription_webhook(self, alert_devs: list, result: dict) -> None:
         """
-        Send one webhook alert per CRITICAL prescription deviation.
-        Only fires for severity == 'critical' or 'critical_high'.
+        Send one webhook alert per WARNING/CRITICAL prescription deviation.
+        Fires for severity == 'warning' or 'critical'.
         Payload matches the push-notification API format:
           { foundry_key, line_pkey, name, parameter_label, category,
             severity, threshold_min, threshold_max, threshold_unit }
         """
-        from .webhook_notifier import _get_cfg, _post_alert_type, _post_alert, _shift_name
+        from .webhook_notifier import _get_cfg, _post_alert_type, _post_alert, _shift_name, _severity_passes
         cfg = _get_cfg(self._config)
         if not cfg.get("enabled", False):
             return
         if not cfg.get("send_prescription", False):
+            return
+
+        # Filter devs by the "Minimum severity to send" dropdown in webhook config
+        alert_devs = [d for d in alert_devs
+                      if _severity_passes(cfg, str(d.get("severity", "warning")))]
+        if not alert_devs:
             return
 
         foundry_key = str(self._config.get("customer_pkey", ""))
@@ -319,7 +338,7 @@ class PrescriptionWatchdog:
         triggered   = str(result.get("batch_time") or result.get("date") or
                           _dt.now().isoformat(timespec="seconds"))[:19]
 
-        for d in critical_devs:
+        for d in alert_devs:
             param      = d.get("param", "")
             lbl        = d.get("label") or param
             actual     = d.get("actual")
@@ -335,6 +354,8 @@ class PrescriptionWatchdog:
             thr_min    = round(float(ref) * 0.97, 4) if ref else None
             thr_max    = round(float(ref) * 1.03, 4) if ref else None
             thr_pct    = round(float(pct), 2) if pct is not None else None
+            sev_raw    = str(d.get("severity", "warning")).lower()
+            sev_label  = "Critical" if sev_raw == "critical" else "Warning"
 
             type_payload = {
                 "foundry_key"    : foundry_key,
@@ -342,7 +363,7 @@ class PrescriptionWatchdog:
                 "name"           : alert_name,
                 "parameter_label": lbl,
                 "category"       : "Additive",
-                "severity"       : "Critical",
+                "severity"       : sev_label,
                 "threshold_min"  : thr_min,
                 "threshold_max"  : thr_max,
                 "threshold_unit" : unit,
@@ -384,7 +405,7 @@ class PrescriptionWatchdog:
                 "threshold_max"       : thr_max,
                 "threshold_percentage": thr_pct,
                 "unit"                : unit,
-                "severity"            : "Critical",
+                "severity"            : sev_label,
                 "shift"               : shift,
                 "line_pkey"           : line_pkey,
                 "component"           : result.get("component_id", ""),
@@ -478,20 +499,21 @@ _PARAM_TO_SETPOINT_COL = {
     "water"          : "water_set_point",
 }
 
-# Severity thresholds (% absolute deviation)
-_THR_OK       = 1.0    # ≤ 1%     : OK
-_THR_WARNING  = 3.0    # 1–3%     : WARNING
-_THR_CRITICAL = 6.0    # 3–6%     : CRITICAL
-# > 6%                 : CRITICAL (high)
-
 # trend_history moved to PrescriptionWatchdog.__init__ as self._trend_history
 
+
+# Cache: (fl_id, group_name, date_str, shift) -> prediction dict
+# One DB hit per (group, date, shift) — all batches in the same shift reuse it.
+_prediction_cache: dict = {}
 
 def _fetch_analytics_prediction(config: dict, group_name: str,
                                  batch_date, shift: str) -> dict:
     """
     Fetch the AI-predicted additive values from analytics_report for the
     given group / date / shift.
+
+    Results are cached per (foundry_line, group, date, shift) so that all
+    batches within the same shift hit the DB only once.
 
     Returns a dict like: {"bentonite": 64.5, "water": 95.0, "lca": 8.2, ...}
     Returns {} if no prediction found.
@@ -500,9 +522,15 @@ def _fetch_analytics_prediction(config: dict, group_name: str,
     from sqlalchemy import text
     import json as _json
 
-    fl_id = int(config.get("foundry_line_id", 1))
+    fl_id    = int(config.get("foundry_line_id", 1))
+    date_str = str(batch_date)
     if not group_name:
         return {}
+
+    cache_key = (fl_id, group_name, date_str, str(shift))
+    if cache_key in _prediction_cache:
+        return _prediction_cache[cache_key]
+
     try:
         engine = get_engine(config)
         with engine.connect() as conn:
@@ -512,33 +540,38 @@ def _fetch_analytics_prediction(config: dict, group_name: str,
                     FROM   `analytics_report`
                     WHERE  `foundry_line_pkey`       = :fl_id
                       AND  `foundry_line_group_name` = :grp
-                      AND  DATE(`date`)              = :dt
+                      AND  `date`                    = :dt
                       AND  `shift`                   = :sh
                       AND  `deleted`                 = 0
                     ORDER  BY `pkey` DESC
                     LIMIT  1
                 """),
                 {"fl_id": fl_id, "grp": group_name,
-                 "dt": str(batch_date), "sh": str(shift)},
+                 "dt": date_str, "sh": str(shift)},
             ).mappings().first()
+        result = {}
         if row and row["predicted_additives_json"]:
             raw = row["predicted_additives_json"]
             parsed = _json.loads(raw) if isinstance(raw, str) else raw
-            return {k: float(v) for k, v in parsed.items() if v is not None}
+            result = {k: float(v) for k, v in parsed.items() if v is not None}
+        _prediction_cache[cache_key] = result
+        # Evict old entries — keep only the last 200 (shift × group combinations)
+        if len(_prediction_cache) > 200:
+            oldest = next(iter(_prediction_cache))
+            del _prediction_cache[oldest]
+        return result
     except Exception as exc:
         logger.debug("_fetch_analytics_prediction failed: %s", exc)
     return {}
 
 
-def _deviation_severity(abs_pct: float) -> str:
-    """
-    ≤ 1%   -> ok
-    1–3%   -> warning
-    > 3%   -> critical
-    """
-    if abs_pct <= _THR_OK:
+def _deviation_severity(abs_pct: float,
+                        ok_thr: float,
+                        warn_thr: float,
+                        critical_thr: float) -> str:
+    if abs_pct <= ok_thr:
         return "ok"
-    if abs_pct <= _THR_WARNING:
+    if abs_pct <= warn_thr:
         return "warning"
     return "critical"
 
@@ -547,7 +580,6 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
                             monitored: list,
                             prediction: dict = None,
                             watch_thr: float = 1.0,
-                            alert_thr: float = 3.0,
                             critical_thr: float = 6.0,
                             fl_id: int = 0,
                             component_id: str = "",
@@ -566,7 +598,7 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
         ≤ 1%  -> ok
         1–3%  -> warning
         3–6%  -> critical
-        > 6%  -> critical_high
+        > critical_thr  -> critical
     """
     prediction = prediction or {}
     if trend_history is None:
@@ -650,7 +682,7 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
             diff_pred     = round(actual - pred, 3)
             pct_pred      = round((actual - pred) / pred * 100, 2) if pred else 0.0
             abs_pct_pred  = abs(pct_pred)
-            sev_pred      = _deviation_severity(abs_pct_pred)
+            sev_pred      = _deviation_severity(abs_pct_pred, tolerance_pct, watch_thr, critical_thr)
             within_pred   = sev_pred == "ok"
 
             # Trend tracking: update history (cap total entries to prevent memory growth)
@@ -664,7 +696,7 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
             hist.append(pct_pred)
             if len(hist) > trend_window:
                 hist.pop(0)
-            trend_msg = _compute_trend(hist, min_batches=trend_min_batches)
+            trend_msg = _compute_trend(hist, min_batches=trend_min_batches, ok_thr=tolerance_pct)
 
             if sev_pred != "ok":
                 direction = "over-dosed" if pct_pred > 0 else "under-dosed"
@@ -695,7 +727,7 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
             diff_sp    = round(actual - setpoint, 3)
             pct_sp     = round((actual - setpoint) / setpoint * 100, 2) if setpoint else 0.0
             abs_pct_sp = abs(pct_sp)
-            sev_sp     = _deviation_severity(abs_pct_sp)
+            sev_sp     = _deviation_severity(abs_pct_sp, tolerance_pct, watch_thr, critical_thr)
 
             if sev_sp != "ok":
                 direction_sp = "above" if pct_sp > 0 else "below"
@@ -757,7 +789,7 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
     return deviations
 
 
-def _compute_trend(history: list, min_batches: int = 3) -> str:
+def _compute_trend(history: list, min_batches: int = 3, ok_thr: float = 1.0) -> str:
     """
     Analyse the last N pct_diff values for a consistent pattern.
     Returns a human-readable trend string, or "" if no clear trend.
@@ -765,8 +797,8 @@ def _compute_trend(history: list, min_batches: int = 3) -> str:
     if len(history) < min_batches:
         return ""
     recent = history
-    n_neg  = sum(1 for v in recent if v < -_THR_OK)
-    n_pos  = sum(1 for v in recent if v >  _THR_OK)
+    n_neg  = sum(1 for v in recent if v < -ok_thr)
+    n_pos  = sum(1 for v in recent if v >  ok_thr)
     n      = len(recent)
     if n_neg >= min_batches:
         avg = round(sum(v for v in recent if v < 0) / max(n_neg, 1), 1)

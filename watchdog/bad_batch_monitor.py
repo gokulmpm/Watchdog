@@ -153,7 +153,7 @@ def _load_badbatch_thresholds(engine, foundry_line_id: int, config: dict = None)
 def _deviation_severity(dev: float, thr: dict) -> str:
     """
     Determine severity for a single signed deviation (SMC − COSP).
-    Returns 'critical' | 'alert' | 'watch' | 'ok'.
+    Returns 'critical' | 'warning' | 'ok'.
     """
     u = thr["upper_raw"]
     l = thr["lower_raw"]
@@ -161,10 +161,10 @@ def _deviation_severity(dev: float, thr: dict) -> str:
         return "critical"
     if (u["modUpperMin"] <= dev < u["criticUpperMin"]) or \
        (l["modLowerMin"] < dev <= l["modLowerMax"]):
-        return "alert"
+        return "critical"
     if (u["lowUpperMin"] <= dev < u["modUpperMin"]) or \
        (l["lowLowerMin"] < dev <= l["lowLowerMax"]):
-        return "watch"
+        return "warning"
     return "ok"
 
 # Only allow plain SQL identifiers (letters, digits, underscores, no backtick escapes needed).
@@ -209,27 +209,11 @@ class BadBatchMonitor:
 
     def start(self) -> None:
         """Run forever -- call from a daemon thread."""
-        bb_cfg          = self._config.get("bad_batch_watchdog", {})
-        poll_sec        = int(bb_cfg.get("poll_interval_sec", 30))
-        idle_timeout    = int(bb_cfg.get("idle_timeout_min",  0))
-        # detection_mode: "db" (default) = smc_badbatch_config signed-diff bands
-        #                 "percentage"   = % of COSP (set point) — watchdog config thresholds
-        detection_mode  = str(bb_cfg.get("detection_mode", "db")).lower()
-        if detection_mode not in ("db", "percentage"):
-            detection_mode = "db"
-        # % mode thresholds (only used when detection_mode="percentage")
-        pct_ok_thr      = float(bb_cfg.get("pct_ok_thr",       1.0))
-        pct_warn_thr    = float(bb_cfg.get("pct_warn_thr",      3.0))
-        pct_crit_thr    = float(bb_cfg.get("pct_critical_thr",  5.0))
-        smc_col         = _safe_col(str(bb_cfg.get("smc_col",  _SMC_DEFAULT)),  _SMC_DEFAULT)
-        cosp_col        = _safe_col(str(bb_cfg.get("cosp_col", _COSP_DEFAULT)), _COSP_DEFAULT)
+        bb_cfg       = self._config.get("bad_batch_watchdog", {})
+        poll_sec     = int(bb_cfg.get("poll_interval_sec", 30))
+        idle_timeout = int(bb_cfg.get("idle_timeout_min",  0))
 
-        logger.info(
-            "[%s]  Bad-batch monitor starting  "
-            "(poll=%ds  mode=%s  smc_col=%s  cosp_col=%s  "
-            "— db=smc_badbatch_config signed-diff  percentage=%%COSP bands)",
-            self._label, poll_sec, detection_mode, smc_col, cosp_col,
-        )
+        logger.info("[%s]  Bad-batch monitor starting  (poll=%ds)", self._label, poll_sec)
 
         self._last_batch_pkey   = self._fetch_max_pkey()
         self._current_component = self._fetch_current_component()
@@ -240,6 +224,28 @@ class BadBatchMonitor:
 
         while True:
             try:
+                # Re-read all config values each cycle — picks up live DB updates
+                bb_cfg         = self._config.get("bad_batch_watchdog", {})
+                detection_mode = str(bb_cfg.get("detection_mode", "db")).lower()
+                if detection_mode not in ("db", "percentage"):
+                    detection_mode = "db"
+                smc_col  = _safe_col(str(bb_cfg.get("smc_col",  _SMC_DEFAULT)),  _SMC_DEFAULT)
+                cosp_col = _safe_col(str(bb_cfg.get("cosp_col", _COSP_DEFAULT)), _COSP_DEFAULT)
+
+                if detection_mode == "percentage":
+                    _missing = [k for k in ("pct_ok_thr", "pct_warn_thr", "pct_critical_thr")
+                                if bb_cfg.get(k) is None]
+                    if _missing:
+                        logger.warning(
+                            "[%s]  Skipping poll — missing thresholds in DB config: %s",
+                            self._label, _missing,
+                        )
+                        time.sleep(poll_sec)
+                        continue
+                pct_ok_thr   = float(bb_cfg["pct_ok_thr"])       if detection_mode == "percentage" else 0.0
+                pct_warn_thr = float(bb_cfg["pct_warn_thr"])      if detection_mode == "percentage" else 0.0
+                pct_crit_thr = float(bb_cfg["pct_critical_thr"])  if detection_mode == "percentage" else 0.0
+
                 new_alerts = self._poll(smc_col, cosp_col,
                                         detection_mode=detection_mode,
                                         pct_ok_thr=pct_ok_thr,
@@ -379,14 +385,15 @@ class BadBatchMonitor:
             written += n
 
             if n > 0:
-                _sev = str(result.get("severity") or "").lower()
-                _is_critical = _sev in ("critical", "critical_high")
-                # Collect critical results — email sent ONCE per component after loop
-                if _is_critical:
+                from .webhook_notifier import _get_cfg, _severity_passes
+                _wh_cfg = _get_cfg(self._config)
+                _sev    = str(result.get("severity") or "").lower()
+                # Collect warning/critical results — email sent ONCE per component after loop
+                if _sev in ("warning", "critical") and _severity_passes(_wh_cfg, _sev) \
+                        and _wh_cfg.get("send_bad_batch", False):
                     _cid = result.get("component_id") or ""
                     _crit_by_comp.setdefault(_cid, []).append(result)
-                # Webhook — fire per batch for Critical and Alert
-                _wh_cfg = self._config.get("webhook", {})
+                # Webhook — fire per batch, respects send_bad_batch + min_severity
                 if _wh_cfg.get("enabled") and _wh_cfg.get("send_bad_batch", False):
                     try:
                         self._send_webhook(result)
@@ -469,7 +476,7 @@ class BadBatchMonitor:
                     FROM   `additive`
                     WHERE  foundry_line_id = :fl
                       AND  deleted = 0
-                      AND  DATE(`date`) = :dt
+                      AND  `date` >= :dt AND `date` < DATE_ADD(:dt, INTERVAL 1 DAY)
                       AND  `shift`      = :sh
                       AND  `{smc_col}`  IS NOT NULL
                       AND  `{cosp_col}` IS NOT NULL
@@ -526,7 +533,7 @@ class BadBatchMonitor:
                     FROM   `additive`
                     WHERE  foundry_line_id = :fl
                       AND  deleted = 0
-                      AND  DATE(`date`) = :dt
+                      AND  `date` >= :dt AND `date` < DATE_ADD(:dt, INTERVAL 1 DAY)
                       AND  `{smc_col}`  IS NOT NULL
                       AND  `{cosp_col}` IS NOT NULL
                     GROUP BY `shift`
@@ -595,12 +602,12 @@ class BadBatchMonitor:
         if not cfg.get("enabled", False):
             return
 
-        severity_raw = result.get("severity") or "watch"
-        # Only send Critical / Alert — skip Watch and unknown
-        if severity_raw not in ("critical", "alert"):
+        severity_raw = result.get("severity") or "warning"
+        # Only send warning or critical — skip ok and unknown
+        if severity_raw not in ("warning", "critical"):
             return
         from .webhook_notifier import _severity_passes
-        if not _severity_passes(cfg, severity_raw.capitalize()):
+        if not _severity_passes(cfg, severity_raw):
             return
 
         severity    = severity_raw.capitalize()

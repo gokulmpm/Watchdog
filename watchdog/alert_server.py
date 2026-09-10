@@ -105,6 +105,12 @@ def favicon():
     from flask import Response
     return Response(svg, mimetype="image/svg+xml")
 
+@app.route("/api/health")
+def health():
+    from flask import jsonify
+    return jsonify({"status": "ok"}), 200
+
+
 @app.route("/")
 def index():
     user = request.args.get("user", "").strip()
@@ -1262,6 +1268,10 @@ def save_foundry_config():
         if not saved:
             return jsonify({"error": "DB write failed -- check logs"}), 500
 
+        # Hot-reload: update in-memory config immediately so the dashboard
+        # and any subsequent API calls see the new values without a restart.
+        _config.setdefault("foundry_configs", {})[label] = fc
+
         return jsonify({"ok": True, "label": label, "saved": True, "source": "DB"})
     except Exception as exc:
         logger.error("save_foundry_config failed (%s): %s", label, exc)
@@ -1344,15 +1354,24 @@ def main():
     app.secret_key = _config.get("dashboard_secret", "sandman-watchdog-dashboard-2026")
 
     # -- Bootstrap DB config store ---------------------------------------------
-    from .config_store import get_registry_engine, ensure_config_table, load_all_configs
+    from .config_store import (
+        get_registry_engine, ensure_config_table,
+        seed_foundry_configs, load_all_configs,
+    )
     try:
         _reg_engine = get_registry_engine(_config)
         if _reg_engine:
             ensure_config_table(_reg_engine)
+            # Seed defaults for any foundry that has no DB row yet (INSERT IGNORE
+            # means existing manually-set values are never overwritten).
+            json_foundry_cfgs = _config.get("foundry_configs", {})
+            seeded = seed_foundry_configs(_reg_engine, json_foundry_cfgs)
+            if seeded:
+                logger.info("Seeded default config for %d new foundry line(s)", seeded)
+            # DB is always source of truth -- load after seeding
             db_configs = load_all_configs(_reg_engine)
-            if db_configs:
-                _config.setdefault("foundry_configs", {}).update(db_configs)
-                logger.info("Loaded %d per-foundry config(s) from DB", len(db_configs))
+            _config.setdefault("foundry_configs", {}).update(db_configs)
+            logger.info("Loaded %d per-foundry config(s) from DB", len(db_configs))
     except Exception as exc:
         logger.warning("Config DB bootstrap failed -- using JSON file only: %s", exc)
         _reg_engine = None
@@ -1383,7 +1402,9 @@ def _foundry_cfg(db_name: str, line_id: int) -> dict:
     # Overlay any per-foundry config stored in foundry_configs
     label = f"{db_name}_L{line_id}"
     overlay = _config.get("foundry_configs", {}).get(label, {})
-    cfg = {**_config, "database": base_db, "foundry_line_id": line_id, **overlay}
+    # Exclude foundry_configs so other foundries' configs are never leaked in
+    base = {k: v for k, v in _config.items() if k != "foundry_configs"}
+    cfg = {**base, "database": base_db, "foundry_line_id": line_id, **overlay}
     return cfg
 
 

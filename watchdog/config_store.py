@@ -109,20 +109,35 @@ def load_foundry_config(engine: Engine, label: str) -> dict:
         return {}
 
 
-def load_all_configs(engine: Engine) -> dict:
-    """Return {foundry_label: config_dict} for every stored config."""
+def load_all_configs(engine: Engine, since: datetime | None = None) -> dict:
+    """
+    Return {foundry_label: config_dict} for stored configs.
+
+    Pass `since` (a datetime) to only fetch rows updated after that timestamp —
+    use this on periodic reloads to avoid a full table scan every 60 s.
+    Omit `since` (or pass None) on startup to load everything.
+    """
     try:
+        if since is not None:
+            sql = text(
+                "SELECT `foundry_label`, `config_json` FROM `watchdog_si_config`"
+                " WHERE `updated_at` > :since"
+            )
+            params: dict = {"since": since}
+        else:
+            sql = text("SELECT `foundry_label`, `config_json` FROM `watchdog_si_config`")
+            params = {}
+
         with engine.connect() as conn:
-            rows = conn.execute(
-                text("SELECT `foundry_label`, `config_json` FROM `watchdog_si_config`")
-            ).mappings().fetchall()
+            rows = conn.execute(sql, params).mappings().fetchall()
         result = {}
         for row in rows:
             raw = row["config_json"]
             result[row["foundry_label"]] = (
                 json.loads(raw) if isinstance(raw, str) else (dict(raw) if raw else {})
             )
-        logger.info("load_all_configs: %d foundry config(s) loaded from DB", len(result))
+        if result:
+            logger.info("load_all_configs: %d foundry config(s) loaded from DB", len(result))
         return result
     except Exception as exc:
         logger.warning("load_all_configs failed: %s", exc)
@@ -130,6 +145,38 @@ def load_all_configs(engine: Engine) -> dict:
 
 
 # --- Write --------------------------------------------------------------------
+
+def seed_foundry_configs(engine: Engine, foundry_configs: dict) -> int:
+    """
+    Seed default configs from the JSON file into the DB for any label that has
+    no existing row.  Uses INSERT IGNORE so it never overwrites values that were
+    already saved via the Config UI.
+
+    Returns the number of rows actually inserted.
+    """
+    if not foundry_configs:
+        return 0
+    sql = text("""
+        INSERT IGNORE INTO `watchdog_si_config` (`foundry_label`, `config_json`, `updated_at`)
+        VALUES (:lbl, :cfg, :now)
+    """)
+    inserted = 0
+    now = datetime.now()
+    for label, cfg in foundry_configs.items():
+        try:
+            with engine.begin() as conn:
+                result = conn.execute(sql, {
+                    "lbl": label,
+                    "cfg": json.dumps(cfg, ensure_ascii=False),
+                    "now": now,
+                })
+                if result.rowcount:
+                    inserted += 1
+                    logger.info("watchdog_si_config seeded default for: %s", label)
+        except Exception as exc:
+            logger.warning("seed_foundry_configs(%s) failed: %s", label, exc)
+    return inserted
+
 
 def save_foundry_config_db(engine: Engine, label: str, config: dict) -> bool:
     """

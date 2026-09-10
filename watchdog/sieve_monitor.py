@@ -54,19 +54,13 @@ class SieveChangeMonitor:
 
     def start(self) -> None:
         """Run forever -- call from a daemon thread."""
-        sw_cfg          = self._config.get("sieve_watchdog", {})
-        poll_sec        = int(sw_cfg.get("poll_interval_sec",  60))
-        idle_timeout    = int(sw_cfg.get("idle_timeout_min",   0))
-        threshold       = float(sw_cfg.get("pct_change_warning", 5.0))
-        ok_thr          = float(sw_cfg.get("ok_thr",       1.0))
-        warn_thr        = float(sw_cfg.get("warn_thr",     3.0))
-        critical_thr    = float(sw_cfg.get("critical_thr", 5.0))
-        band_thresholds = {str(k): float(v)
-                           for k, v in sw_cfg.get("band_thresholds", {}).items()}
+        sw_cfg       = self._config.get("sieve_watchdog", {})
+        poll_sec     = int(sw_cfg.get("poll_interval_sec", 60))
+        idle_timeout = int(sw_cfg.get("idle_timeout_min",  0))
 
         logger.info(
-            "[%s]  Sieve monitor starting  (poll=%ds  ok=%.1f%%  warn=%.1f%%  critical=%.1f%%)",
-            self._label, poll_sec, ok_thr, warn_thr, critical_thr,
+            "[%s]  Sieve monitor starting  (poll=%ds  idle_timeout=%dmin)",
+            self._label, poll_sec, idle_timeout,
         )
 
         self._last_sieve_pkey = self._fetch_max_pkey()
@@ -98,6 +92,24 @@ class SieveChangeMonitor:
 
         while True:
             try:
+                # Re-read all config values each cycle — picks up live DB updates
+                sw_cfg          = self._config.get("sieve_watchdog", {})
+                band_thresholds = {str(k): float(v)
+                                   for k, v in sw_cfg.get("band_thresholds", {}).items()}
+                _missing = [k for k in ("ok_thr", "warn_thr", "critical_thr")
+                            if sw_cfg.get(k) is None]
+                if _missing:
+                    logger.warning(
+                        "[%s]  Skipping poll — missing thresholds in DB config: %s",
+                        self._label, _missing,
+                    )
+                    time.sleep(poll_sec)
+                    continue
+                ok_thr       = float(sw_cfg["ok_thr"])
+                warn_thr     = float(sw_cfg["warn_thr"])
+                critical_thr = float(sw_cfg["critical_thr"])
+                threshold    = warn_thr
+
                 new_alerts = self._poll(threshold, band_thresholds,
                                         ok_thr=ok_thr, warn_thr=warn_thr,
                                         critical_thr=critical_thr)
@@ -125,8 +137,8 @@ class SieveChangeMonitor:
     # -- Private ---------------------------------------------------------------
 
     def _poll(self, threshold: float, band_thresholds: dict = None,
-              ok_thr: float = 1.0, warn_thr: float = 3.0,
-              critical_thr: float = 5.0) -> int:
+              ok_thr: float = None, warn_thr: float = None,
+              critical_thr: float = None) -> int:
         from .pipeline.db_connector import get_engine
         from .alert_db_writer       import ensure_table, write_sieve_change_alert
 
@@ -165,16 +177,18 @@ class SieveChangeMonitor:
                 pct      = (curr_val - prev_val) / abs(prev_val) * 100.0
                 abs_pct  = abs(pct)
 
-                # Severity tier — 3-zone matching config UI (OK / WARNING / CRITICAL)
-                # Use per-band override threshold if configured, else global thresholds
-                band_ok   = band_thresholds.get(str(band_type), ok_thr)   if band_thresholds.get(str(band_type)) else ok_thr
-                band_warn = band_thresholds.get(str(band_type), warn_thr) if band_thresholds.get(str(band_type)) else warn_thr
+                # Severity: ok (no alert) / warning / critical — thresholds from DB config
+                band_ok   = band_thresholds.get(str(band_type)) or ok_thr
+                band_warn = band_thresholds.get(str(band_type)) or warn_thr
+                band_crit = band_thresholds.get(str(band_type)) or critical_thr
                 if abs_pct <= band_ok:
                     continue          # OK — no alert
                 elif abs_pct <= band_warn:
                     severity = "warning"
+                elif abs_pct <= band_crit:
+                    severity = "critical"
                 else:
-                    severity = "critical"  # above critical_thr (same as warn_thr in config)
+                    severity = "critical"  # above critical_thr — still critical (no 4th level)
 
                 band_thr = band_thresholds.get(str(band_type), threshold)
                 changes.append({
@@ -209,17 +223,21 @@ class SieveChangeMonitor:
                 )
                 written += n
                 if n > 0:
-                    _wh_cfg = self._config.get("webhook", {})
-                    if _wh_cfg.get("enabled") and _wh_cfg.get("send_sieve", False):
+                    from .webhook_notifier import _get_cfg, _severity_passes
+                    _wh_cfg = _get_cfg(self._config)
+                    _worst  = worst_sev.get("severity", "warning")
+                    if _wh_cfg.get("enabled") and _wh_cfg.get("send_sieve", False) \
+                            and _severity_passes(_wh_cfg, _worst):
                         try:
                             self._send_webhook(result)
                         except Exception as _whe:
                             logger.warning("[%s]  Sieve webhook failed: %s", self._label, _whe)
-                    try:
-                        from .email_notifier import send_sieve_email
-                        send_sieve_email(result, self._config, label=self._label)
-                    except Exception as _eme:
-                        logger.warning("[%s]  Sieve email failed: %s", self._label, _eme)
+                    if _wh_cfg.get("send_sieve", False) and _severity_passes(_wh_cfg, _worst):
+                        try:
+                            from .email_notifier import send_sieve_email
+                            send_sieve_email(result, self._config, label=self._label)
+                        except Exception as _eme:
+                            logger.warning("[%s]  Sieve email failed: %s", self._label, _eme)
 
             # Always advance prev_bands so each reading is the baseline for the next
             self._prev_bands.update(curr_bands)
@@ -453,6 +471,7 @@ def _fetch_new_sieve_entries(
           AND  b.value  IS NOT NULL
           AND  b.sand_type IN (0, 1, 2, 3)
         ORDER  BY s.pkey ASC, b.sand_type, b.band_type
+        LIMIT  500
     """)
 
     try:
@@ -488,11 +507,17 @@ def run_check(config: dict, write_db: bool = False,
     from datetime import date as _date
 
     sw_cfg          = config.get("sieve_watchdog", {})
-    threshold       = float(sw_cfg.get("pct_change_warning", 5.0))
-    ok_thr          = float(sw_cfg.get("ok_thr",       1.0))
-    warn_thr        = float(sw_cfg.get("warn_thr",     3.0))
-    critical_thr    = float(sw_cfg.get("critical_thr", 5.0))
     band_thresholds = {str(k): float(v) for k, v in sw_cfg.get("band_thresholds", {}).items()}
+
+    _missing = [k for k in ("ok_thr", "warn_thr", "critical_thr") if sw_cfg.get(k) is None]
+    if _missing:
+        logger.error("run_check: missing sieve thresholds in DB config: %s", _missing)
+        return []
+
+    ok_thr       = float(sw_cfg["ok_thr"])
+    warn_thr     = float(sw_cfg["warn_thr"])
+    critical_thr = float(sw_cfg["critical_thr"])
+    threshold    = warn_thr
     fl_id           = int(config.get("foundry_line_id", 1))
     band_filter     = config.get("sv_params") or None
     engine          = get_engine(config)

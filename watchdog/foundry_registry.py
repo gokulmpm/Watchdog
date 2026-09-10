@@ -449,16 +449,23 @@ def expand_all_foundries(base_config: dict, skip_enabled_check: bool = False) ->
         )
         return [(f"{label}_L{fl_id}", base_config)]
 
-    # Exclude the registry DB itself — it is the platform/customer DB, not a foundry
     registry_db_name = registry_cfg.get("name", "").lower()
 
+    # Always include the registry DB itself as a foundry candidate.
+    # Deduplicate by name in case it also appears in the customers table.
+    existing_names = {db["name"].lower() for db in foundry_dbs}
+    if registry_db_name not in existing_names:
+        foundry_dbs = list(foundry_dbs) + [{
+            "host"         : registry_cfg.get("host", "localhost"),
+            "port"         : int(registry_cfg.get("port", 3306)),
+            "name"         : registry_cfg.get("name", ""),
+            "user"         : registry_cfg.get("user", "root"),
+            "password"     : registry_cfg.get("password", ""),
+            "customer_pkey": 0,
+        }]
+
     entries: list[tuple[str, dict]] = []
-    skipped_dbs = 0
     for db_info in foundry_dbs:
-        if db_info["name"].lower() == registry_db_name:
-            logger.info("expand_all_foundries: skipping registry DB %s", db_info["name"])
-            skipped_dbs += 1
-            continue
         line_ids = discover_foundry_line_ids(db_info)
         for fl_id in line_ids:
             label  = f"{db_info['name']}_L{fl_id}"
@@ -469,9 +476,8 @@ def expand_all_foundries(base_config: dict, skip_enabled_check: bool = False) ->
             entries.append((label, config))
 
     logger.info(
-        "Registry expansion complete: %d monitor instance(s) across %d foundry DB(s) "
-        "(%d registry DB skipped)",
-        len(entries), len(foundry_dbs) - skipped_dbs, skipped_dbs,
+        "Registry expansion complete: %d monitor instance(s) across %d foundry DB(s)",
+        len(entries), len(foundry_dbs),
     )
     return entries
 
