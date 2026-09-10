@@ -199,6 +199,7 @@ class BadBatchMonitor:
         self._current_shift      = ""   # shift currently being processed
         self._current_date       = ""   # date currently being processed
         self._last_summary_date  = ""   # last date for which a daily summary was sent
+        self._webhook_alerted    = set()  # components already sent a webhook alert this run
 
     def start(self) -> None:
         """Run forever -- call from a daemon thread."""
@@ -342,6 +343,7 @@ class BadBatchMonitor:
                         comp_id,
                     )
                     self._current_component = comp_id
+                    self._webhook_alerted.clear()  # reset — new component gets a fresh alert
 
             smc_val  = _to_float(row.get("smc_value"))
             cosp_val = _to_float(row.get("cosp_value"))
@@ -401,27 +403,33 @@ class BadBatchMonitor:
                 from .webhook_notifier import _get_cfg, _severity_passes
                 _wh_cfg = _get_cfg(self._config)
                 _sev    = str(result.get("severity") or "").lower()
-                # Collect warning/critical results — email sent ONCE per component after loop
+                _cid    = result.get("component_id") or ""
+
+                # Email — collected per component; sent once per component per poll cycle
                 if _sev in ("warning", "critical") and _severity_passes(_wh_cfg, _sev) \
-                        and _wh_cfg.get("send_bad_batch", False):
-                    _cid = result.get("component_id") or ""
+                        and _wh_cfg.get("send_bad_batch", False) \
+                        and _cid not in self._webhook_alerted:
                     _crit_by_comp.setdefault(_cid, []).append(result)
-                # Webhook — fire per batch, respects send_bad_batch + min_severity
-                if _wh_cfg.get("enabled") and _wh_cfg.get("send_bad_batch", False):
+
+                # Webhook — fire ONCE per component; silent for all subsequent bad batches
+                # until component changes. _webhook_alerted resets on component change.
+                if _wh_cfg.get("enabled") and _wh_cfg.get("send_bad_batch", False) \
+                        and _cid not in self._webhook_alerted:
                     try:
                         self._send_webhook(result)
+                        self._webhook_alerted.add(_cid)
+                        logger.info("[%s]  Webhook sent for component %s — suppressed until component changes",
+                                    self._label, _cid)
                     except Exception as _whe:
                         logger.warning("[%s]  Bad-batch webhook failed: %s", self._label, _whe)
 
-        # Instead of 10 emails for 10 batches, sends 1 email per component:
-        #   "Component X had N critical bad batches in this poll cycle"
+        # One email per component on first bad batch — silent until component changes.
         if _crit_by_comp:
             try:
                 from .email_notifier import send_bad_batch_email, check_and_send_combined
                 for _cid, _results in _crit_by_comp.items():
-                    # Use the worst (largest diff) result as the representative
                     _rep = max(_results, key=lambda r: abs(r.get("smc_cosp_diff") or 0))
-                    _rep["_batch_count"] = len(_results)   # inject count for email template
+                    _rep["_batch_count"] = len(_results)
                     send_bad_batch_email(_rep, self._config, label=self._label)
                     check_and_send_combined(
                         engine, self._config,
@@ -431,8 +439,9 @@ class BadBatchMonitor:
                         foundry_line_id = fl_id,
                         label           = self._label,
                     )
-                    logger.info("[%s]  Email sent for %s — %d critical batch(es)",
-                                self._label, _cid, len(_results))
+                    self._webhook_alerted.add(_cid)  # mark emailed — suppress further alerts
+                    logger.info("[%s]  Alert sent for %s — suppressed until component changes",
+                                self._label, _cid)
             except Exception as _email_exc:
                 logger.warning("[%s]  Bad-batch email failed: %s", self._label, _email_exc)
 
