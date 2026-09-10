@@ -958,12 +958,17 @@ def _normalise_date_shift(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+# Legacy camelCase param map — used as fallback when config has no param_columns.
+# Keys match analytics_report.predicted_additives_json; values are additive table columns.
 _PRESC_PARAM_MAP = {
     "bentonite"      : "bentonite_actual",
     "freshSilicaSand": "fss_actual",
     "lca"            : "coal_dust_actual",
     "water"          : "water_actual",
 }
+# Reverse: actual_col → prescription JSON key (for dynamic stem lookup)
+_ACTUAL_COL_TO_PRESC_KEY = {v: k for k, v in _PRESC_PARAM_MAP.items()}
+
 _PRESC_PARAM_LABELS = {
     "bentonite"      : "Bentonite (kg/batch)",
     "freshSilicaSand": "Fresh Silica Sand (kg/batch)",
@@ -988,13 +993,43 @@ def fetch_prescription_data(
     fl_id   = int(config.get("foundry_line_id", 1))
     tol_pct = float(config.get("prescription_watchdog", {}).get("tolerance_pct", 3.0))
 
+    # Build dynamic param map from config — falls back to legacy hardcoded map.
+    # param_map: {param_key: actual_db_col}
+    # presc_key_map: {param_key: key_in_analytics_report_json}
+    pw_cfg      = config.get("prescription_watchdog", {})
+    monitored   = list(pw_cfg.get("monitored_params", []))
+    pcols_cfg   = dict(pw_cfg.get("param_columns", {}))
+    if monitored and pcols_cfg:
+        param_map = {}
+        presc_key_map = {}
+        for p in monitored:
+            ov = pcols_cfg.get(p, {})
+            act_col = ov.get("actual_col") or f"{p}_actual"
+            param_map[p] = act_col
+            # Resolve the key used in analytics_report JSON:
+            # 1. Explicit override in param_columns
+            # 2. Reverse-lookup via legacy _ACTUAL_COL_TO_PRESC_KEY (stem → camelCase)
+            # 3. Fall back to param key itself
+            presc_key_map[p] = (
+                ov.get("prescription_key")
+                or _ACTUAL_COL_TO_PRESC_KEY.get(act_col)
+                or p
+            )
+    else:
+        param_map     = dict(_PRESC_PARAM_MAP)
+        presc_key_map = {p: p for p in _PRESC_PARAM_MAP}
+
+    # Build SELECT clause for only the actual columns we need
+    act_cols_sql = ",\n               ".join(
+        f"a.`{col}`" for col in dict.fromkeys(param_map.values())
+    )
+
     date_frag, params = _date_filter(start_date, end_date, date_col="a.date")
 
     sql = f"""
         SELECT a.pkey, a.component_id, DATE(a.date) AS date, a.shift,
                a.timestamp AS batch_time,
-               a.bentonite_actual, a.coal_dust_actual,
-               a.fss_actual,       a.water_actual,
+               {act_cols_sql},
                g.name AS group_name
         FROM   additive a
         LEFT JOIN foundry_line_group_component gc
@@ -1072,10 +1107,14 @@ def fetch_prescription_data(
         }
 
         any_deviation = False
-        for pkey_name, actual_col in _PRESC_PARAM_MAP.items():
-            label    = _PRESC_PARAM_LABELS[pkey_name]
-            actual   = b.get(actual_col)
-            prescribed = float(presc[pkey_name]) if (presc and pkey_name in presc and presc[pkey_name] is not None) else None
+        for param_key, actual_col in param_map.items():
+            presc_key = presc_key_map[param_key]
+            actual    = b.get(actual_col)
+            prescribed = (
+                float(presc[presc_key])
+                if (presc and presc_key in presc and presc[presc_key] is not None)
+                else None
+            )
 
             actual_f     = float(actual) if actual is not None else None
             prescribed_f = prescribed
@@ -1084,7 +1123,7 @@ def fetch_prescription_data(
             if actual_f is not None and prescribed_f is not None and prescribed_f != 0 and actual_f != 0:
                 diff     = round(actual_f - prescribed_f, 3)
                 pct_diff = round(diff / prescribed_f * 100, 2)
-                within   = abs(pct_diff) <= tol_pct   # percentage-based tolerance
+                within   = abs(pct_diff) <= tol_pct
                 status   = "OK" if within else "DEVIATION"
                 if not within:
                     any_deviation = True
@@ -1095,12 +1134,11 @@ def fetch_prescription_data(
                 diff = pct_diff = None
                 status = "NO PRESCRIPTION"
 
-            short = pkey_name
-            row_out[f"{short} Prescribed"] = prescribed_f
-            row_out[f"{short} Actual"]     = round(actual_f, 3) if actual_f is not None else None
-            row_out[f"{short} Diff"]       = diff
-            row_out[f"{short} % Diff"]     = pct_diff
-            row_out[f"{short} Status"]     = status
+            row_out[f"{param_key} Prescribed"] = prescribed_f
+            row_out[f"{param_key} Actual"]     = round(actual_f, 3) if actual_f is not None else None
+            row_out[f"{param_key} Diff"]       = diff
+            row_out[f"{param_key} % Diff"]     = pct_diff
+            row_out[f"{param_key} Status"]     = status
 
         row_out["Overall Status"] = "DEVIATION" if any_deviation else (
             "OK" if presc else "NO PRESCRIPTION"

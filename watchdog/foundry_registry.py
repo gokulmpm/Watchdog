@@ -665,40 +665,44 @@ def get_available_parameters(db_cfg: dict, foundry_line_id: int, param_columns: 
                                _short_err(exc))
                 return []
 
-        # -- Prescription params: only include columns with actual non-zero data --
-        _PRESC_DEFAULTS = [
-            {"key": "bentonite",       "label": "Bentonite",         "actual_col": "bentonite_actual",  "setpoint_col": "bentonite_set_point"},
-            {"key": "freshSilicaSand", "label": "Fresh Silica Sand", "actual_col": "fss_actual",        "setpoint_col": "fss_set_point"},
-            {"key": "lca",             "label": "LCA / Coal Dust",   "actual_col": "coal_dust_actual",  "setpoint_col": "coal_dust_set_point"},
-            {"key": "water",           "label": "Water",             "actual_col": "water_actual",      "setpoint_col": "water_set_point"},
-        ]
-        # Apply per-foundry column overrides from param_columns config
-        _pc = param_columns or {}
-        _PRESC_CANDIDATES = []
-        for _d in _PRESC_DEFAULTS:
-            _ov = _pc.get(_d["key"], {})
-            _PRESC_CANDIDATES.append({
-                "key"         : _d["key"],
-                "label"       : _ov.get("label")       or _d["label"],
-                "actual_col"  : _ov.get("actual_col")  or _d["actual_col"],
-                "setpoint_col": _ov.get("setpoint_col") or _d["setpoint_col"],
-                "column"      : _ov.get("actual_col")  or _d["actual_col"],
-            })
-
+        # -- Prescription params: discovered dynamically from additive table schema --
         def _prescription_params() -> list:
             if not _table_exists("additive"):
                 return []
+            try:
+                all_cols = {r[0] for r in conn.execute(text("DESCRIBE `additive`")).fetchall()}
+            except Exception as exc:
+                logger.warning("get_available_parameters: DESCRIBE additive -- %s", _short_err(exc))
+                return []
+
+            def _find_setpoint_col(stem: str) -> str:
+                for suffix in ("_set_point", "_setpoint", "_sp", "_target", "_set"):
+                    if f"{stem}{suffix}" in all_cols:
+                        return f"{stem}{suffix}"
+                return ""
+
+            _pc = param_columns or {}
             available = []
-            for p in _PRESC_CANDIDATES:
-                col = p["actual_col"]
+            for act_col in sorted(c for c in all_cols if c.endswith("_actual")):
+                stem    = act_col[:-len("_actual")]
+                ov      = _pc.get(stem, {})
+                eff_act = ov.get("actual_col")   or act_col
+                eff_sp  = ov.get("setpoint_col") or _find_setpoint_col(stem)
+                label   = ov.get("label")        or stem.replace("_", " ").title()
                 try:
                     row = conn.execute(text(
                         f"SELECT 1 FROM `additive` "
                         f"WHERE `foundry_line_id` = :fl_id AND `deleted` = 0 "
-                        f"AND `{col}` IS NOT NULL AND `{col}` > 0 LIMIT 1"
+                        f"AND `{eff_act}` IS NOT NULL AND `{eff_act}` > 0 LIMIT 1"
                     ), {"fl_id": foundry_line_id}).fetchone()
                     if row:
-                        available.append(p)
+                        available.append({
+                            "key"         : stem,
+                            "label"       : label,
+                            "actual_col"  : eff_act,
+                            "setpoint_col": eff_sp,
+                            "column"      : eff_act,
+                        })
                 except Exception:
                     pass
             return available

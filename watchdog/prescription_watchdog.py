@@ -592,7 +592,8 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
                             trend_window: int = 5,
                             trend_min_batches: int = 3,
                             trend_history: dict = None,
-                            param_thresholds: dict = None) -> list[dict]:
+                            param_thresholds: dict = None,
+                            param_columns: dict = None) -> list[dict]:
     """
     Build per-parameter deviation dicts with two comparison types:
 
@@ -621,7 +622,7 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
         _crit_thr  = float(_pthr.get("crit_thr",  critical_thr))
 
         _pc        = (param_columns or {}).get(param, {})
-        actual_col = _pc.get("actual_col") or _PARAM_TO_ACTUAL_COL.get(param)
+        actual_col = _pc.get("actual_col") or _PARAM_TO_ACTUAL_COL.get(param) or f"{param}_actual"
         actual_raw = row.get(actual_col) if (actual_col and actual_col in row.index) \
                      else row.get(f"{param} Actual")
         try:
@@ -664,7 +665,7 @@ def _build_deviations_list(row: pd.Series, tolerance_pct: float,
             })
             continue
 
-        sp_col   = _pc.get("setpoint_col") or _PARAM_TO_SETPOINT_COL.get(param)
+        sp_col   = _pc.get("setpoint_col") or _PARAM_TO_SETPOINT_COL.get(param) or f"{param}_set_point"
         sp_raw   = row.get(sp_col) if (sp_col and sp_col in row.index) else None
         setpoint = None
         if sp_raw is not None:
@@ -823,9 +824,8 @@ def _compute_trend(history: list, min_batches: int = 3, ok_thr: float = 1.0) -> 
 def _all_actuals_zero(row: pd.Series, monitored: list) -> bool:
     """Return True if every monitored parameter has an actual value of 0 or null."""
     for param in monitored:
-        # Check both actual column name formats
-        actual_col = _PARAM_TO_ACTUAL_COL.get(param)
-        val = row.get(actual_col) if actual_col else None
+        actual_col = _PARAM_TO_ACTUAL_COL.get(param) or f"{param}_actual"
+        val = row.get(actual_col)
         if val is None:
             val = row.get(f"{param} Actual")
         try:

@@ -18,6 +18,7 @@ Benefits over JSON file storage
 
 import json
 import logging
+import pathlib
 from datetime import datetime
 from typing import Optional
 
@@ -26,6 +27,38 @@ from sqlalchemy.engine import Engine
 from urllib.parse import quote_plus
 
 logger = logging.getLogger(__name__)
+
+# Local per-foundry JSON files live alongside the infrastructure config file.
+_CONFIG_DIR = pathlib.Path(__file__).parent / "config"
+
+
+def _foundry_file_path(label: str, config_dir: pathlib.Path = None) -> pathlib.Path:
+    d = pathlib.Path(config_dir) if config_dir else _CONFIG_DIR
+    return d / f"{label}.json"
+
+
+def save_foundry_config_file(label: str, config: dict, config_dir=None) -> bool:
+    """Write per-foundry config to a local JSON file as a local backup of the DB row."""
+    path = _foundry_file_path(label, config_dir)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
+        logger.info("foundry config file written: %s", path.name)
+        return True
+    except Exception as exc:
+        logger.warning("save_foundry_config_file(%s) failed: %s", label, exc)
+        return False
+
+
+def load_foundry_config_file(label: str, config_dir=None) -> dict:
+    """Load per-foundry config from local JSON file (fallback when DB is unavailable)."""
+    path = _foundry_file_path(label, config_dir)
+    try:
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.debug("load_foundry_config_file(%s) failed: %s", label, exc)
+    return {}
 
 _CREATE_SQL = """
 CREATE TABLE IF NOT EXISTS `watchdog_si_config` (
@@ -81,7 +114,8 @@ def ensure_config_table(engine: Engine) -> None:
         logger.warning("ensure_config_table failed: %s", exc)
 
 def load_foundry_config(engine: Engine, label: str) -> dict:
-    """Return the stored config dict for one foundry label, or {} if not found."""
+    """Return the stored config dict for one foundry label, or {} if not found.
+    Falls back to the local per-foundry JSON file when the DB has no row."""
     try:
         with engine.connect() as conn:
             row = conn.execute(
@@ -89,13 +123,12 @@ def load_foundry_config(engine: Engine, label: str) -> dict:
                 {"lbl": label},
             ).mappings().first()
         if not row:
-            return {}
+            return load_foundry_config_file(label)
         raw = row["config_json"]
         return json.loads(raw) if isinstance(raw, str) else (dict(raw) if raw else {})
     except Exception as exc:
-        # Table may not exist in foundry DB (it lives in sandman_dev) — not an error
-        logger.debug("load_foundry_config(%s) failed: %s", label, exc)
-        return {}
+        logger.debug("load_foundry_config(%s) DB unavailable, trying file fallback: %s", label, exc)
+        return load_foundry_config_file(label)
 
 def load_all_configs(engine: Engine, since: datetime | None = None) -> dict:
     """
@@ -164,7 +197,8 @@ def seed_foundry_configs(engine: Engine, foundry_configs: dict) -> int:
 
 def save_foundry_config_db(engine: Engine, label: str, config: dict) -> bool:
     """
-    Upsert one foundry-line config into watchdog_si_config.
+    Upsert one foundry-line config into watchdog_si_config and also write a
+    local per-foundry JSON file at watchdog/config/{label}.json as a backup.
     Returns True on success.
     """
     sql = text("""
@@ -182,6 +216,7 @@ def save_foundry_config_db(engine: Engine, label: str, config: dict) -> bool:
                 "now": datetime.now(),
             })
         logger.info("watchdog_si_config saved: %s", label)
+        save_foundry_config_file(label, config)
         return True
     except Exception as exc:
         logger.error("save_foundry_config_db(%s) failed: %s", label, exc)

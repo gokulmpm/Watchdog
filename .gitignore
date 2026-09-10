@@ -39,6 +39,9 @@ watchdog.log*
 # Commit only watchdog_config.example.json (placeholder values).
 watchdog/config/watchdog_config.json
 watchdog/config/watchdog_config_staging.json
+# Per-foundry config files (auto-generated from watchdog_si_config DB rows — contain secrets)
+watchdog/config/*_L*.json
+watchdog/config/"watchdog_config copy.json"
 .env
 .env.*
 *.secret

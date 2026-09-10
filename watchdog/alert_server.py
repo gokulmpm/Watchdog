@@ -119,7 +119,10 @@ def index():
         if _verify_sandman_password(user, pwd):
             session["user"] = user
             session["_ts"]  = int(_time.time())
-            resp = redirect("/")
+            next_url = request.args.get("next", "/")
+            if not next_url.startswith("/"):
+                next_url = "/"
+            resp = redirect(next_url)
             resp.set_cookie("sandman_user", user,
                             max_age=_SESSION_MAX_AGE, samesite="Lax")
             return resp
@@ -351,6 +354,9 @@ def acknowledge_property_alert(alert_id: int):
 @app.route("/config")
 def config_page():
     """Serve the watchdog configuration page."""
+    from flask import session, redirect
+    if not session.get("user"):
+        return redirect("/?next=/config")
     return render_template("config.html")
 
 @app.route("/api/config/foundries")
