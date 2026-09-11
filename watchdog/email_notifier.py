@@ -1081,17 +1081,19 @@ def _presc_section_html(title: str, action: str, devs: list, ref_key: str) -> st
 
         rows_html += f"""
           <tr style="background:{bg};border-bottom:1px solid #eee;vertical-align:top">
-            <td style="padding:10px 14px;font-size:13px;font-weight:700;color:{_C['ink']};min-width:140px">
+            <td style="padding:10px 12px;font-size:13px;font-weight:700;color:{_C['ink']};min-width:110px">
               {lbl}{trend_cell}
             </td>
-            <td style="padding:10px 14px;font-size:12px;color:{_C['subtle']}">{ref_lbl}: {ref_val}</td>
-            <td style="padding:10px 14px;font-size:12px;color:{_C['subtle']}">Actual: {act_val}</td>
-            <td style="padding:10px 14px;font-size:13px;text-align:right;color:{pct_color};font-weight:700">{pct_str}</td>
-            <td style="padding:10px 14px;font-size:11px;color:{_C['subtle']};white-space:nowrap">{thr_html}</td>
-            <td style="padding:10px 14px;text-align:center">
+            <td style="padding:10px 12px;font-size:12px;color:{_C['subtle']}">
+              <div style="color:{_C['muted']}">{ref_lbl}: {ref_val}</div>
+              <div style="margin-top:3px">Actual: {act_val}</div>
+            </td>
+            <td style="padding:10px 10px;font-size:13px;text-align:right;color:{pct_color};font-weight:700;white-space:nowrap">{pct_str}</td>
+            <td style="padding:10px 12px;font-size:10px;color:{_C['subtle']}">{thr_html}</td>
+            <td style="padding:10px 10px;text-align:center;white-space:nowrap">
               <span style="background:{'#ffe0e0' if sev=='critical' else '#fff3e0' if sev=='warning' else '#e8f5e9'};
                            color:{sev_color};border:1px solid {sev_color};border-radius:3px;
-                           padding:3px 10px;font-size:11px;font-weight:700">{sev_label}</span>
+                           padding:3px 8px;font-size:11px;font-weight:700">{sev_label}</span>
             </td>
           </tr>"""
 
@@ -1103,12 +1105,11 @@ def _presc_section_html(title: str, action: str, devs: list, ref_key: str) -> st
            style="border-collapse:collapse;border:1px solid #e0e0e0;border-radius:4px;overflow:hidden">
       <thead>
         <tr style="background:{_C['ink']}">
-          <th style="padding:9px 14px;font-size:11px;color:#fff;text-align:left;font-weight:600">PARAMETER</th>
-          <th style="padding:9px 14px;font-size:11px;color:#fff;text-align:left;font-weight:600">REFERENCE</th>
-          <th style="padding:9px 14px;font-size:11px;color:#fff;text-align:left;font-weight:600">ACTUAL</th>
-          <th style="padding:9px 14px;font-size:11px;color:#fff;text-align:right;font-weight:600">DEV %</th>
-          <th style="padding:9px 14px;font-size:11px;color:#fff;text-align:left;font-weight:600">THRESHOLDS</th>
-          <th style="padding:9px 14px;font-size:11px;color:#fff;text-align:center;font-weight:600">STATUS</th>
+          <th style="padding:9px 12px;font-size:11px;color:#fff;text-align:left;font-weight:600">PARAMETER</th>
+          <th style="padding:9px 12px;font-size:11px;color:#fff;text-align:left;font-weight:600">REFERENCE / ACTUAL</th>
+          <th style="padding:9px 10px;font-size:11px;color:#fff;text-align:right;font-weight:600">DEV %</th>
+          <th style="padding:9px 12px;font-size:11px;color:#fff;text-align:left;font-weight:600">THRESHOLDS</th>
+          <th style="padding:9px 10px;font-size:11px;color:#fff;text-align:center;font-weight:600">STATUS</th>
         </tr>
       </thead>
       <tbody>{rows_html}

@@ -348,7 +348,7 @@ class PrescriptionWatchdog:
 
         for d in alert_devs:
             param      = d.get("param", "")
-            lbl        = d.get("label") or param
+            lbl        = d.get("label") or param.replace("_", " ").title()
             actual     = d.get("actual")
             pres       = d.get("prescribed")
             sp         = d.get("setpoint")
